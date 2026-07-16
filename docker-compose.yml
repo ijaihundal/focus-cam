@@ -2,6 +2,10 @@ services:
   focus-cam:
     build: .
     restart: unless-stopped
+    # Dokploy writes UI env vars to a .env file next to this compose file.
+    # env_file loads them INTO the container (substitution alone does not).
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
     expose:
