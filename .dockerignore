@@ -7,3 +7,4 @@ npm-debug.log
 *.mp4
 Dockerfile
 .dockerignore
+docker-compose.yml

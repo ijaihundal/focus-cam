@@ -1,0 +1,31 @@
+services:
+  focus-cam:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "3000"
+    volumes:
+      - focus-cam-recordings:/app/recordings
+    networks:
+      - dokploy-network
+    labels:
+      # HTTPS router with automatic Let's Encrypt certificate
+      - "traefik.enable=true"
+      - "traefik.http.routers.focus-cam.rule=Host(`focus.jaihundal.com`)"
+      - "traefik.http.routers.focus-cam.entrypoints=websecure"
+      - "traefik.http.routers.focus-cam.tls.certResolver=letsencrypt"
+      - "traefik.http.routers.focus-cam.service=focus-cam"
+      # HTTP -> HTTPS redirect
+      - "traefik.http.routers.focus-cam-http.rule=Host(`focus.jaihundal.com`)"
+      - "traefik.http.routers.focus-cam-http.entrypoints=web"
+      - "traefik.http.routers.focus-cam-http.middlewares=focus-cam-redirect"
+      - "traefik.http.middlewares.focus-cam-redirect.redirectscheme.scheme=https"
+      # Route to the app's internal port
+      - "traefik.http.services.focus-cam.loadbalancer.server.port=3000"
+
+volumes:
+  focus-cam-recordings:
+
+networks:
+  dokploy-network:
+    external: true
