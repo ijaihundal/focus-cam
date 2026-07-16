@@ -1,6 +1,8 @@
 node_modules
 recordings
 .git
+.env
+.env.local
 npm-debug.log
 .DS_Store
 *.webm

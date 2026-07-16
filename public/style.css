@@ -51,6 +51,7 @@ header {
 .tab:hover:not(.active) { color: var(--text); }
 
 .disk { color: var(--muted); font-size: 13px; }
+.head-right { display: flex; align-items: center; gap: 10px; }
 
 main { max-width: 1000px; margin: 0 auto; padding: 22px 18px 60px; }
 

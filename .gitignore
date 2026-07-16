@@ -4,3 +4,5 @@ npm-debug.log
 .DS_Store
 *.webm
 *.mp4
+.env
+.env.local

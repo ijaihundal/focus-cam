@@ -1,5 +1,11 @@
 const $ = (id) => document.getElementById(id);
 
+// ---- Logout ----
+$("logoutBtn")?.addEventListener("click", async () => {
+  await fetch("/api/logout", { method: "POST" });
+  window.location.href = "/login";
+});
+
 // ---- View switching ----
 document.querySelectorAll(".tab").forEach((t) => {
   t.addEventListener("click", () => {
