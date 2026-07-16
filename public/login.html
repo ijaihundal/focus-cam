@@ -21,6 +21,9 @@
     input { width:100%; background:#20242e; color:var(--text); border:1px solid var(--border);
       border-radius:10px; padding:13px; font-size:15px; outline:none; }
     input:focus { border-color:var(--accent); }
+    .remember { display:flex; align-items:center; gap:8px; margin-top:16px; color:var(--muted);
+      font-size:13px; cursor:pointer; }
+    .remember input { width:auto; }
     .btn { width:100%; margin-top:24px; border:none; border-radius:11px; padding:14px;
       font-size:16px; font-weight:700; cursor:pointer; color:#fff; background:var(--accent); }
     .btn:active { transform:scale(.98); }
@@ -35,6 +38,7 @@
     <input id="username" name="username" type="text" autocomplete="username" autofocus required />
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <label class="remember"><input type="checkbox" id="remember" checked /> Stay logged in on this device</label>
     <button class="btn" type="submit">Sign in</button>
     <div class="err" id="err"></div>
   </form>
@@ -46,11 +50,12 @@
       err.textContent = "";
       const username = document.getElementById("username").value;
       const password = document.getElementById("password").value;
+      const remember = document.getElementById("remember").checked;
       try {
         const r = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
+          body: JSON.stringify({ username, password, remember }),
         });
         const data = await r.json();
         if (r.ok && data.ok) {

@@ -48,6 +48,41 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+// ---- Failed-login rate limiting (in-memory, per IP) ----
+const LOGIN_MAX_FAILS = 5; // attempts before lockout
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // count failures within 15 min
+const LOGIN_LOCK_MS = 5 * 60 * 1000; // lockout duration
+const loginFails = new Map(); // ip -> { count, firstAt, lockUntil }
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.ip || "")
+    .split(",")[0]
+    .trim();
+}
+function loginRateState(ip) {
+  const now = Date.now();
+  const r = loginFails.get(ip);
+  if (r && r.lockUntil && r.lockUntil > now) {
+    return { locked: true, retryAfter: Math.ceil((r.lockUntil - now) / 1000) };
+  }
+  return { locked: false };
+}
+function loginRateFail(ip) {
+  const now = Date.now();
+  let r = loginFails.get(ip);
+  if (!r || now - r.firstAt > LOGIN_WINDOW_MS) r = { count: 0, firstAt: now, lockUntil: 0 };
+  r.count++;
+  if (r.count >= LOGIN_MAX_FAILS) r.lockUntil = now + LOGIN_LOCK_MS;
+  loginFails.set(ip, r);
+}
+function loginRateClear(ip) {
+  loginFails.delete(ip);
+}
+
+// Session durations
+const REMEMBER_MAXAGE = 30 * 24 * 60 * 60 * 1000; // 30 days
+const TEMP_MAXAGE = 24 * 60 * 60 * 1000; // 1 day
+
 async function checkPassword(submitted) {
   if (PASSWORD_HASH) {
     try {
@@ -87,17 +122,28 @@ app.get("/login", (req, res) => {
 });
 
 app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body || {};
+  const ip = clientIp(req);
+  const state = loginRateState(ip);
+  if (state.locked) {
+    res.set("Retry-After", String(state.retryAfter));
+    return res
+      .status(429)
+      .json({ ok: false, error: `Too many attempts. Try again in ${state.retryAfter}s.` });
+  }
+  const { username, password, remember } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ ok: false, error: "Missing credentials" });
   }
   const userOk = safeEqual(username, AUTH_USERNAME);
   const passOk = await checkPassword(password);
   if (!userOk || !passOk) {
+    loginRateFail(ip);
     await new Promise((r) => setTimeout(r, 400)); // slow brute force
     return res.status(401).json({ ok: false, error: "Invalid username or password" });
   }
+  loginRateClear(ip);
   req.session.user = AUTH_USERNAME;
+  req.sessionOptions.maxAge = remember ? REMEMBER_MAXAGE : TEMP_MAXAGE;
   res.json({ ok: true });
 });
 
