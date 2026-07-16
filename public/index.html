@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Focus Cam</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="dot"></span> Focus Cam</div>
+    <div class="tabs">
+      <button class="tab active" data-view="record">Record</button>
+      <button class="tab" data-view="library">Library</button>
+    </div>
+    <div class="disk" id="disk"></div>
+  </header>
+
+  <main>
+    <!-- RECORD -->
+    <section id="view-record">
+      <div class="stage">
+        <video id="preview" autoplay muted playsinline></video>
+        <div class="placeholder" id="placeholder">
+          <div style="font-size:40px">📷</div>
+          <div>Camera is off</div>
+          <div style="font-size:13px">Press Start to begin a study session</div>
+        </div>
+        <div class="overlay">
+          <div class="rec-badge" id="recBadge"><span class="pulse"></span><span id="recText">REC</span></div>
+          <div class="timer" id="timer">00:00:00</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-go" id="startBtn">Start Session</button>
+        <button class="btn btn-stop" id="stopBtn" disabled>Stop &amp; Save</button>
+      </div>
+
+      <div class="settings">
+        <div class="field">
+          <label>Segment length (auto-saves every)</label>
+          <select id="segLen">
+            <option value="5">5 minutes</option>
+            <option value="10" selected>10 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Video quality</label>
+          <select id="quality">
+            <option value="720">720p — balanced (recommended)</option>
+            <option value="480">480p — saves space</option>
+            <option value="1080">1080p — high</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="status" id="status"></div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section id="view-library" style="display:none">
+      <div id="sessions"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

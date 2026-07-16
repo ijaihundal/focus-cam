@@ -1,0 +1,14 @@
+{
+  "name": "focus-cam",
+  "version": "1.0.0",
+  "description": "Self-hosted study accountability camera. Records from your phone browser and saves to the host machine.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}

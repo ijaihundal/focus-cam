@@ -1,0 +1,6 @@
+node_modules
+recordings
+npm-debug.log
+.DS_Store
+*.webm
+*.mp4

@@ -1,0 +1,9 @@
+node_modules
+recordings
+.git
+npm-debug.log
+.DS_Store
+*.webm
+*.mp4
+Dockerfile
+.dockerignore
