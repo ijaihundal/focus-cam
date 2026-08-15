@@ -2,74 +2,101 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>Focus Cam</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Focus" />
+  <meta name="theme-color" content="#0b0d12" />
+  <title>Focus</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <header>
-    <div class="brand"><span class="dot"></span> Focus Cam</div>
-    <div class="tabs">
-      <button class="tab active" data-view="record">Record</button>
-      <button class="tab" data-view="library">Library</button>
-    </div>
-    <div class="head-right">
-      <span class="disk" id="disk"></span>
-      <button class="tab" id="logoutBtn">Logout</button>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span> FOCUS</div>
+    <div class="topbar-right">
+      <div class="live" id="liveDot"><span class="live-dot"></span><span id="liveText">live</span></div>
+      <button class="linklike" id="logoutBtn">sign out</button>
     </div>
   </header>
 
-  <main>
-    <!-- RECORD -->
-    <section id="view-record">
-      <div class="stage">
-        <video id="preview" autoplay muted playsinline></video>
-        <div class="placeholder" id="placeholder">
-          <div style="font-size:40px">📷</div>
-          <div>Camera is off</div>
-          <div style="font-size:13px">Press Start to begin a study session</div>
-        </div>
-        <div class="overlay">
-          <div class="rec-badge" id="recBadge"><span class="pulse"></span><span id="recText">REC</span></div>
-          <div class="timer" id="timer">00:00:00</div>
+  <main id="main">
+
+    <!-- ============ FOCUS VIEW ============ -->
+    <section id="view-record" class="view">
+
+      <div class="card now-card" id="nowCard">
+        <div class="now-label">RIGHT NOW</div>
+        <div class="now-task" id="nowTask">Waiting for the plan…</div>
+        <div class="now-meta" id="nowMeta">—</div>
+      </div>
+
+      <div class="card feed-card">
+        <div class="section-head">THE WARDEN</div>
+        <div id="verdicts" class="verdicts">
+          <div class="empty">Silent, for now.</div>
         </div>
       </div>
 
-      <div class="controls">
-        <button class="btn btn-go" id="startBtn">Start Session</button>
-        <button class="btn btn-stop" id="stopBtn" disabled>Stop &amp; Save</button>
+      <div class="card cam-card">
+        <div class="cam-wrap">
+          <video id="preview" playsinline muted autoplay></video>
+          <div id="placeholder" class="cam-off">
+            <div class="cam-off-dot"></div>
+            <span>camera off</span>
+          </div>
+          <div id="recBadge" class="rec-badge"><span class="rec-pip"></span><span id="recText">REC</span><span id="timer">00:00:00</span></div>
+        </div>
+        <div class="cam-settings">
+          <label>quality
+            <select id="quality">
+              <option value="480">480p</option>
+              <option value="720" selected>720p</option>
+              <option value="1080">1080p</option>
+            </select>
+          </label>
+          <label>segment
+            <select id="segLen">
+              <option value="5">5 min</option>
+              <option value="10" selected>10 min</option>
+            </select>
+          </label>
+        </div>
       </div>
 
-      <div class="settings">
-        <div class="field">
-          <label>Segment length (auto-saves every)</label>
-          <select id="segLen">
-            <option value="5">5 minutes</option>
-            <option value="10" selected>10 minutes</option>
-            <option value="15">15 minutes</option>
-            <option value="30">30 minutes</option>
-          </select>
+      <div class="card todos-card">
+        <div class="section-head row">
+          <span>THE PLAN</span>
+          <span class="muted" id="todosUpdated"></span>
         </div>
-        <div class="field">
-          <label>Video quality</label>
-          <select id="quality">
-            <option value="720">720p — balanced (recommended)</option>
-            <option value="480">480p — saves space</option>
-            <option value="1080">1080p — high</option>
-          </select>
-        </div>
+        <ul id="todoList" class="todos"><li class="empty">No tasks yet — the agent sets them.</li></ul>
       </div>
 
-      <div class="status" id="status"></div>
     </section>
 
-    <!-- LIBRARY -->
-    <section id="view-library" style="display:none">
-      <div id="sessions"></div>
+    <!-- ============ LIBRARY VIEW ============ -->
+    <section id="view-library" class="view" style="display:none">
+      <div class="card">
+        <div class="section-head row"><span>SESSIONS</span><span class="muted" id="disk"></span></div>
+        <div id="sessions" class="sessions"><div class="empty">Loading…</div></div>
+      </div>
     </section>
+
   </main>
+
+  <nav class="bottombar">
+    <button class="navbtn active" id="tabFocus" data-view="record">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
+      <span>Focus</span>
+    </button>
+    <button id="startBtn" class="rec-btn" aria-label="start recording"><span class="rec-pip-big"></span></button>
+    <button class="navbtn" id="tabLibrary" data-view="library">
+      <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 5v14" stroke="currentColor" stroke-width="2"/><path d="M14 5v14" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Library</span>
+    </button>
+  </nav>
+
+  <div id="status" class="status"></div>
 
   <script src="/app.js"></script>
 </body>

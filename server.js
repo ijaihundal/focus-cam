@@ -13,15 +13,27 @@ app.set("trust proxy", 1); // trust Traefik's X-Forwarded-* headers
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
 const RECORDINGS_DIR = path.join(__dirname, "recordings");
+const DATA_DIR = path.join(__dirname, "data");
 
-if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+const TODOS_FILE = path.join(DATA_DIR, "todos.json");
+const VERDICTS_FILE = path.join(DATA_DIR, "verdicts.json");
+const STATE_FILE = path.join(DATA_DIR, "state.json");
+const TEACHINGS_FILE = path.join(DATA_DIR, "teachings.md");
+const FRAME_FILE = path.join(DATA_DIR, "frame_latest.jpg");
 
-// ---- Auth config from environment ----
+for (const d of [RECORDINGS_DIR, DATA_DIR]) {
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+}
+
+// ---- Config from environment ----
 const AUTH_USERNAME = process.env.AUTH_USERNAME || "admin";
 const PASSWORD_HASH = process.env.AUTH_PASSWORD_HASH; // preferred (bcrypt)
 const PASSWORD_PLAIN = process.env.AUTH_PASSWORD; // fallback
 const SESSION_SECRET =
   process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+const AGENT_TOKEN = process.env.AGENT_TOKEN || ""; // bearer token for the agent (KB side)
+const JUDGE_MODE = process.env.JUDGE_MODE || "agent"; // agent | vlm | off
+const JUDGE_INTERVAL_SEC = parseInt(process.env.JUDGE_INTERVAL_SEC || "60", 10);
 
 if (!PASSWORD_HASH && !PASSWORD_PLAIN) {
   console.error(
@@ -32,9 +44,57 @@ if (!PASSWORD_HASH && !PASSWORD_PLAIN) {
 }
 if (!process.env.SESSION_SECRET) {
   console.warn(
-    "  WARNING: SESSION_SECRET not set. Using a random one — you'll be logged out on every restart.\n" +
-      "  Set SESSION_SECRET in your environment for persistent sessions.\n"
+    "  WARNING: SESSION_SECRET not set. Using a random one — you'll be logged out on every restart.\n"
   );
+}
+if (!AGENT_TOKEN) {
+  console.warn(
+    "  WARNING: AGENT_TOKEN not set. The agent (live task updates, cron judging) cannot authenticate.\n"
+  );
+}
+
+// Cross-origin isolation headers: required later for WebGPU/VLM (SharedArrayBuffer).
+app.use((req, res, next) => {
+  res.set("Cross-Origin-Opener-Policy", "same-origin");
+  res.set("Cross-Origin-Embedder-Policy", "require-corp");
+  next();
+});
+
+// ---- Tiny JSON file store (atomic writes) ----
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+function writeJson(file, data) {
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+// ---- SSE hub ----
+const sseClients = new Set();
+const sseKeepAlive = setInterval(() => {
+  for (const res of sseClients) {
+    try {
+      res.write(": ping\n\n");
+    } catch {
+      sseClients.delete(res);
+    }
+  }
+}, 25000);
+
+function broadcast(event, data) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const res of sseClients) {
+    try {
+      res.write(payload);
+    } catch {
+      sseClients.delete(res);
+    }
+  }
 }
 
 // Constant-time string comparison to resist timing attacks.
@@ -49,10 +109,10 @@ function safeEqual(a, b) {
 }
 
 // ---- Failed-login rate limiting (in-memory, per IP) ----
-const LOGIN_MAX_FAILS = 5; // attempts before lockout
-const LOGIN_WINDOW_MS = 15 * 60 * 1000; // count failures within 15 min
-const LOGIN_LOCK_MS = 5 * 60 * 1000; // lockout duration
-const loginFails = new Map(); // ip -> { count, firstAt, lockUntil }
+const LOGIN_MAX_FAILS = 5;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_LOCK_MS = 5 * 60 * 1000;
+const loginFails = new Map();
 
 function clientIp(req) {
   return String(req.headers["x-forwarded-for"] || req.ip || "")
@@ -80,8 +140,8 @@ function loginRateClear(ip) {
 }
 
 // Session durations
-const REMEMBER_MAXAGE = 30 * 24 * 60 * 60 * 1000; // 30 days
-const TEMP_MAXAGE = 24 * 60 * 60 * 1000; // 1 day
+const REMEMBER_MAXAGE = 30 * 24 * 60 * 60 * 1000;
+const TEMP_MAXAGE = 24 * 60 * 60 * 1000;
 
 async function checkPassword(submitted) {
   if (PASSWORD_HASH) {
@@ -107,14 +167,14 @@ app.use(
   cookieSession({
     name: "focuscam_session",
     keys: [SESSION_SECRET],
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    secure: isProd, // HTTPS-only in production
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure: isProd,
     httpOnly: true,
     sameSite: "lax",
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
 // ---- Public auth routes (not gated) ----
 app.get("/login", (req, res) => {
@@ -138,7 +198,7 @@ app.post("/api/login", async (req, res) => {
   const passOk = await checkPassword(password);
   if (!userOk || !passOk) {
     loginRateFail(ip);
-    await new Promise((r) => setTimeout(r, 400)); // slow brute force
+    await new Promise((r) => setTimeout(r, 400));
     return res.status(401).json({ ok: false, error: "Invalid username or password" });
   }
   loginRateClear(ip);
@@ -152,8 +212,23 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-// ---- Auth gate for everything below ----
+// ---- Auth gate: session cookie OR agent bearer token ----
 function requireAuth(req, res, next) {
+  // Agent path: Authorization: Bearer <AGENT_TOKEN>
+  const header = req.headers.authorization || "";
+  if (AGENT_TOKEN && header.startsWith("Bearer ") && safeEqual(header.slice(7), AGENT_TOKEN)) {
+    req.isAgent = true;
+    return next();
+  }
+  // Vision-tool path: the frame endpoint also accepts ?token= (URL-only clients).
+  if (
+    AGENT_TOKEN &&
+    req.path === "/api/frame/latest.jpg" &&
+    safeEqual(req.query.token || "", AGENT_TOKEN)
+  ) {
+    req.isAgent = true;
+    return next();
+  }
   if (req.session && req.session.user) return next();
   if (req.path.startsWith("/api/") || req.method !== "GET") {
     return res.status(401).json({ ok: false, error: "Not authenticated" });
@@ -162,10 +237,148 @@ function requireAuth(req, res, next) {
 }
 app.use(requireAuth);
 
-// ---- Protected static assets & API ----
+// ---- Protected static assets ----
 app.use(express.static(path.join(__dirname, "public")));
 
-// Where each uploaded segment lands: recordings/<session>/seg_<n>.<ext>
+// ===================== LIVE TASK SYSTEM =====================
+
+// Client config for the phone UI.
+app.get("/api/config", (req, res) => {
+  res.json({ judgeMode: JUDGE_MODE, judgeIntervalSec: JUDGE_INTERVAL_SEC });
+});
+
+// ---- Todos (the live plan; agent writes, phone reads) ----
+function sanitizeTodos(input) {
+  if (!Array.isArray(input)) return null;
+  return input.slice(0, 100).map((t, i) => ({
+    id: String(t && t.id != null ? t.id : i),
+    title: String(t && t.title != null ? t.title : "").slice(0, 200),
+    status: ["pending", "active", "done"].includes(t && t.status) ? t.status : "pending",
+    note: String(t && t.note != null ? t.note : "").slice(0, 300),
+  }));
+}
+
+app.get("/api/todos", (req, res) => {
+  res.json(readJson(TODOS_FILE, []));
+});
+
+app.put("/api/todos", (req, res) => {
+  const todos = sanitizeTodos(req.body);
+  if (!todos) return res.status(400).json({ ok: false, error: "Body must be an array of todos" });
+  writeJson(TODOS_FILE, todos);
+  broadcast("todos", todos);
+  res.json({ ok: true, count: todos.length });
+});
+
+// ---- Teachings (the warden's doctrine; agent writes) ----
+const DEFAULT_TEACHINGS =
+  "# The Teachings\n\nPlaceholder doctrine. Everything in this file is injected into the warden's " +
+  "judgment prompt — replace it with the real teachings and the warden speaks in their voice.\n";
+
+app.get("/api/teachings", (req, res) => {
+  let text = DEFAULT_TEACHINGS;
+  try {
+    text = fs.readFileSync(TEACHINGS_FILE, "utf8");
+  } catch {}
+  res.type("text/markdown").send(text);
+});
+
+app.put("/api/teachings", (req, res) => {
+  const text = String((req.body || {}).text || "").slice(0, 20000);
+  fs.writeFileSync(TEACHINGS_FILE, text);
+  broadcast("teachings", { text });
+  res.json({ ok: true });
+});
+
+// ---- Frames (one still per judge interval while recording) ----
+const frameUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 },
+});
+
+app.post("/api/frame", frameUpload.single("frame"), (req, res) => {
+  if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
+    return res.status(400).json({ ok: false, error: "Missing frame" });
+  }
+  fs.writeFileSync(FRAME_FILE, req.file.buffer);
+  const state = readJson(STATE_FILE, {});
+  state.lastFrameAt = Date.now();
+  writeJson(STATE_FILE, state);
+  broadcast("frame", { at: state.lastFrameAt });
+  res.json({ ok: true, bytes: req.file.buffer.length });
+});
+
+app.get("/api/frame/latest.jpg", (req, res) => {
+  if (!fs.existsSync(FRAME_FILE)) return res.status(404).json({ ok: false, error: "No frame yet" });
+  res.set("Cache-Control", "no-store");
+  res.type("image/jpeg").send(fs.readFileSync(FRAME_FILE));
+});
+
+// ---- Verdicts (judgments land here from the phone VLM or the agent) ----
+function sanitizeVerdict(body) {
+  const b = body || {};
+  const allowed = ["on_task", "off_task", "unclear", "message"];
+  return {
+    source: b.source === "vlm" ? "vlm" : "agent",
+    verdict: allowed.includes(b.verdict) ? b.verdict : "unclear",
+    task: String(b.task || "").slice(0, 200),
+    note: String(b.note || "").slice(0, 400),
+    message: String(b.message || "").slice(0, 600),
+    at: Date.now(),
+  };
+}
+
+app.post("/api/verdict", (req, res) => {
+  const v = sanitizeVerdict(req.body);
+  const all = readJson(VERDICTS_FILE, []);
+  all.push(v);
+  while (all.length > 200) all.shift();
+  writeJson(VERDICTS_FILE, all);
+  broadcast("verdict", v);
+  res.json({ ok: true });
+});
+
+app.get("/api/verdicts", (req, res) => {
+  res.json(readJson(VERDICTS_FILE, []).slice(-50).reverse());
+});
+
+// ---- Presence / heartbeat ----
+app.post("/api/heartbeat", (req, res) => {
+  const b = req.body || {};
+  const state = readJson(STATE_FILE, {});
+  state.recording = !!b.recording;
+  state.session = b.session ? String(b.session).slice(0, 80) : null;
+  state.lastHeartbeat = Date.now();
+  writeJson(STATE_FILE, state);
+  broadcast("presence", { recording: state.recording, session: state.session, at: state.lastHeartbeat });
+  res.json({ ok: true });
+});
+
+app.get("/api/state", (req, res) => {
+  res.json({
+    ...readJson(STATE_FILE, {}),
+    clients: sseClients.size,
+    judgeMode: JUDGE_MODE,
+    judgeIntervalSec: JUDGE_INTERVAL_SEC,
+    now: Date.now(),
+  });
+});
+
+// ---- SSE stream (todos, verdicts, presence — live to every open screen) ----
+app.get("/api/events", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-store",
+    Connection: "keep-alive",
+  });
+  res.flushHeaders();
+  res.write("retry: 3000\n\n");
+  sseClients.add(res);
+  req.on("close", () => sseClients.delete(res));
+});
+
+// ===================== RECORDINGS (unchanged core) =====================
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const session = safeName(req.params.session, "unknown");
@@ -181,7 +394,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 1024 * 1024 * 1024 } });
 
-// Upload one recorded segment.
 app.post("/api/upload/:session/:seg", upload.single("video"), (req, res) => {
   const session = safeName(req.params.session, "unknown");
   const seg = String(parseInt(req.params.seg, 10) || 0);
@@ -189,7 +401,6 @@ app.post("/api/upload/:session/:seg", upload.single("video"), (req, res) => {
   res.json({ ok: true, url: `/api/recordings/${session}/seg_${seg}.${ext}` });
 });
 
-// List every session with its segment count and total size.
 app.get("/api/recordings", (req, res) => {
   const sessions = [];
   for (const dir of fs.readdirSync(RECORDINGS_DIR)) {
@@ -212,7 +423,6 @@ app.get("/api/recordings", (req, res) => {
   res.json(sessions);
 });
 
-// Stream a recording file (supports range requests for seeking).
 app.get("/api/recordings/:session/:file", (req, res) => {
   const session = safeName(req.params.session, "unknown");
   const parsed = path.parse(req.params.file);
@@ -223,7 +433,6 @@ app.get("/api/recordings/:session/:file", (req, res) => {
   res.sendFile(filePath);
 });
 
-// Delete a whole session folder.
 app.delete("/api/recordings/:session", (req, res) => {
   const session = safeName(req.params.session, "unknown");
   const dir = path.join(RECORDINGS_DIR, session);
@@ -231,7 +440,6 @@ app.delete("/api/recordings/:session", (req, res) => {
   res.json({ ok: true });
 });
 
-// Total disk usage of all recordings.
 app.get("/api/stats", (req, res) => {
   let total = 0;
   let count = 0;
@@ -250,8 +458,8 @@ app.get("/api/stats", (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`\n  Focus Cam is running:`);
+  console.log(`\n  Focus Cam (warden edition) is running:`);
   console.log(`    http://localhost:${PORT}`);
-  console.log(`  Recordings save to: ${RECORDINGS_DIR}`);
-  console.log(`  Login required as: ${AUTH_USERNAME}\n`);
+  console.log(`    judge mode: ${JUDGE_MODE} · interval: ${JUDGE_INTERVAL_SEC}s`);
+  console.log(`    agent token: ${AGENT_TOKEN ? "configured" : "NOT SET"}\n`);
 });

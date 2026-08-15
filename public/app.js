@@ -1,15 +1,33 @@
 const $ = (id) => document.getElementById(id);
 
-// ---- Logout ----
-$("logoutBtn")?.addEventListener("click", async () => {
-  await fetch("/api/logout", { method: "POST" });
-  window.location.href = "/login";
-});
+// Kill pinch-zoom on iOS Safari (native feel).
+document.addEventListener("gesturestart", (e) => e.preventDefault());
 
-// ---- View switching ----
-document.querySelectorAll(".tab").forEach((t) => {
+// ---- Tiny fetch wrapper: bounce to login on session loss ----
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (res.status === 401 && !path.includes("/api/login")) {
+    window.location.href = "/login";
+    throw new Error("unauthenticated");
+  }
+  return res;
+}
+
+function setStatus(msg, kind) {
+  const el = $("status");
+  el.textContent = msg || "";
+  el.className = "status show" + (kind ? " " + kind : "");
+  clearTimeout(setStatus._t);
+  if (msg) setStatus._t = setTimeout(() => (el.className = "status"), 2600);
+}
+
+// ---- View switching (bottom nav) ----
+document.querySelectorAll(".navbtn").forEach((t) => {
   t.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll(".navbtn").forEach((x) => x.classList.remove("active"));
     t.classList.add("active");
     const view = t.dataset.view;
     $("view-record").style.display = view === "record" ? "" : "none";
@@ -18,7 +36,132 @@ document.querySelectorAll(".tab").forEach((t) => {
   });
 });
 
-// ---- Recording state ----
+// ---- Logout ----
+$("logoutBtn").addEventListener("click", async () => {
+  await api("/api/logout", { method: "POST" });
+  window.location.href = "/login";
+});
+
+// ===================== LIVE STATE (SSE) =====================
+
+let todos = [];
+let judgeConfig = { judgeMode: "agent", judgeIntervalSec: 60 };
+
+function activeTodo() {
+  return todos.find((t) => t.status === "active") || todos.find((t) => t.status === "pending") || null;
+}
+
+function renderTodos() {
+  const list = $("todoList");
+  if (!todos.length) {
+    list.innerHTML = '<li class="empty">No tasks yet — the agent sets them.</li>';
+  } else {
+    list.innerHTML = "";
+    for (const t of todos) {
+      const li = document.createElement("li");
+      li.className = "todo" + (t.status === "done" ? " done" : "") + (t.status === "active" ? " active" : "");
+      const box = document.createElement("button");
+      box.className = "todo-check";
+      box.textContent = t.status === "done" ? "✓" : "";
+      box.addEventListener("click", async () => {
+        const next = todos.map((x) =>
+          x.id === t.id ? { ...x, status: x.status === "done" ? "pending" : "done" } : x
+        );
+        await api("/api/todos", { method: "PUT", body: JSON.stringify(next) });
+        // SSE will echo the change back; render optimistically too.
+        todos = next;
+        renderTodos();
+      });
+      const body = document.createElement("div");
+      body.className = "todo-body";
+      const title = document.createElement("div");
+      title.className = "todo-title";
+      title.textContent = t.title;
+      body.appendChild(title);
+      if (t.note) {
+        const note = document.createElement("div");
+        note.className = "todo-note";
+        note.textContent = t.note;
+        body.appendChild(note);
+      }
+      li.appendChild(box);
+      li.appendChild(body);
+      list.appendChild(li);
+    }
+  }
+
+  const now = activeTodo();
+  $("nowTask").textContent = now ? now.title : "Nothing scheduled";
+  const pending = todos.filter((t) => t.status === "pending").length;
+  $("nowMeta").textContent = now
+    ? pending > 1 ? `— ${pending - 0} in queue` : "— last one"
+    : "—";
+}
+
+function verdictBadge(v) {
+  if (v === "on_task") return '<span class="badge on">ON TASK</span>';
+  if (v === "off_task") return '<span class="badge off">OFF TASK</span>';
+  if (v === "message") return '<span class="badge msg">WORD</span>';
+  return '<span class="badge unclear">UNCLEAR</span>';
+}
+
+function prependVerdict(v) {
+  const box = $("verdicts");
+  const empty = box.querySelector(".empty");
+  if (empty) empty.remove();
+  const el = document.createElement("div");
+  el.className = "verdict";
+  const time = new Date(v.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  el.innerHTML = `
+    <div class="verdict-top">${verdictBadge(v.verdict)}<span class="verdict-time">${time} · ${v.source === "vlm" ? "on-device" : "agent"}</span></div>
+    ${v.message ? `<div class="verdict-msg">${escapeHtml(v.message)}</div>` : ""}
+    ${v.note ? `<div class="verdict-note">${escapeHtml(v.note)}</div>` : ""}`;
+  box.prepend(el);
+  while (box.children.length > 30) box.lastChild.remove();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
+function connectSSE() {
+  const es = new EventSource("/api/events");
+  const setLive = (ok) => {
+    $("liveDot").classList.toggle("down", !ok);
+    $("liveText").textContent = ok ? "live" : "reconnecting";
+  };
+  es.onopen = () => setLive(true);
+  es.onerror = () => setLive(false);
+  es.addEventListener("todos", (e) => {
+    todos = JSON.parse(e.data);
+    renderTodos();
+    $("todosUpdated").textContent = "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  });
+  es.addEventListener("verdict", (e) => prependVerdict(JSON.parse(e.data)));
+  es.addEventListener("presence", (e) => {
+    const p = JSON.parse(e.data);
+    if (!p.recording && recording) return; // our own state rules
+  });
+}
+
+async function loadInitialState() {
+  try {
+    const [cfgRes, todosRes, verdictsRes] = await Promise.all([
+      api("/api/config"),
+      api("/api/todos"),
+      api("/api/verdicts"),
+    ]);
+    judgeConfig = await cfgRes.json();
+    todos = await todosRes.json();
+    renderTodos();
+    for (const v of await verdictsRes.json()) prependVerdict(v);
+  } catch (_) {}
+}
+
+// ===================== RECORDING =====================
+
 let stream = null;
 let recorder = null;
 let sessionName = null;
@@ -26,17 +169,13 @@ let segmentIndex = 0;
 let recording = false;
 let segTimer = null;
 let elapsedTimer = null;
+let heartTimer = null;
+let frameTimer = null;
 let startedAt = 0;
 let pickedMime = "video/webm";
+let wakeLock = null;
 
 const preview = $("preview");
-const recBadge = $("recBadge");
-
-function setStatus(msg, kind) {
-  const el = $("status");
-  el.textContent = msg || "";
-  el.className = "status" + (kind ? " " + kind : "");
-}
 
 function fmtTime(ms) {
   const s = Math.floor(ms / 1000);
@@ -50,7 +189,6 @@ function tickTimer() {
   $("timer").textContent = fmtTime(Date.now() - startedAt);
 }
 
-// Pick the best mime type the browser actually supports.
 function pickMime() {
   const candidates = [
     "video/webm;codecs=vp9,opus",
@@ -78,15 +216,14 @@ async function startSession() {
       audio: true,
     });
   } catch (e) {
-    // Retry without audio in case mic permission was denied.
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: width }, height: { ideal: height }, facingMode: "user" },
         audio: false,
       });
-      setStatus("Recording video only (no mic permission).", "ok");
+      setStatus("Video only (no mic permission).", "ok");
     } catch (e2) {
-      setStatus("Could not access camera: " + e2.message, "err");
+      setStatus("Camera access failed: " + e2.message, "err");
       return;
     }
   }
@@ -102,22 +239,24 @@ async function startSession() {
   startedAt = Date.now();
   tickTimer();
   elapsedTimer = setInterval(tickTimer, 1000);
-  recBadge.classList.add("show");
+  document.body.classList.add("recording");
+  $("startBtn").classList.add("rolling");
 
-  $("startBtn").disabled = true;
-  $("stopBtn").disabled = false;
-  $("quality").disabled = true;
-
-  setStatus("Recording…", "ok");
+  setStatus("Recording — the warden is watching.", "ok");
+  heartbeat();
+  heartTimer = setInterval(heartbeat, 30000);
+  startFrameLoop();
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+  } catch (_) {}
   await startSegment();
 }
 
 async function startSegment() {
   if (!recording) return;
   segmentIndex++;
-  $("recText").textContent = `REC · segment ${segmentIndex}`;
+  $("recText").textContent = `REC · ${segmentIndex}`;
 
-  // Each segment gets a fresh recorder so every saved file is independently playable.
   const chunks = [];
   try {
     recorder = new MediaRecorder(stream, { mimeType: pickedMime });
@@ -130,7 +269,7 @@ async function startSegment() {
   recorder.onstop = async () => {
     const blob = new Blob(chunks, { type: pickedMime });
     if (blob.size > 0) await uploadSegment(blob, segmentIndex);
-    if (recording) startSegment(); // roll into the next segment
+    if (recording) startSegment();
   };
   recorder.start();
 
@@ -157,43 +296,97 @@ async function uploadSegment(blob, seg) {
       }
     } catch (_) {}
     attempt++;
-    setStatus(`Retrying segment ${seg}… (attempt ${attempt})`, "err");
+    setStatus(`Retrying segment ${seg}… (${attempt})`, "err");
     await new Promise((res) => setTimeout(res, 2000 * attempt));
   }
   setStatus(`Failed to save segment ${seg}.`, "err");
+}
+
+// ---- Frame loop: one still per judge interval while recording ----
+const frameCanvas = document.createElement("canvas");
+
+function startFrameLoop() {
+  const interval = (judgeConfig.judgeIntervalSec || 60) * 1000;
+  captureFrame(); // immediate first frame
+  frameTimer = setInterval(captureFrame, interval);
+}
+
+async function captureFrame() {
+  if (!recording || !stream) return;
+  const trackSettings = stream.getVideoTracks()[0]?.getSettings?.();
+  const vw = trackSettings?.width || 640;
+  const vh = trackSettings?.height || 480;
+  const w = 480;
+  const h = Math.round((vh / vw) * w);
+  frameCanvas.width = w;
+  frameCanvas.height = h;
+  const ctx = frameCanvas.getContext("2d");
+  ctx.drawImage(preview, 0, 0, w, h);
+  const blob = await new Promise((r) => frameCanvas.toBlob(r, "image/jpeg", 0.72));
+  if (!blob) return;
+  const form = new FormData();
+  form.append("frame", blob, "frame.jpg");
+  try {
+    const r = await fetch("/api/frame", { method: "POST", body: form });
+    if (!r.ok) throw new Error();
+  } catch {
+    setStatus("Frame upload failed — will retry next tick.", "err");
+    return;
+  }
+  // On-device VLM path (graft point, ships separately). When judge mode is
+  // "vlm" the phone itself judges the frame; otherwise the agent does it
+  // server-side off the stored frame.
+  if (judgeConfig.judgeMode === "vlm" && typeof window.runLocalJudge === "function") {
+    try {
+      const verdict = await window.runLocalJudge(blob);
+      if (verdict) await api("/api/verdict", { method: "POST", body: JSON.stringify(verdict) });
+    } catch (_) {}
+  }
+}
+
+async function heartbeat() {
+  try {
+    await api("/api/heartbeat", {
+      method: "POST",
+      body: JSON.stringify({ recording, session: sessionName }),
+    });
+  } catch (_) {}
 }
 
 function stopSession() {
   recording = false;
   clearTimeout(segTimer);
   clearInterval(elapsedTimer);
-  // The active segment's onstop handler will still upload its chunk,
-  // then see recording===false and NOT start a new segment. That's our final save.
+  clearInterval(heartTimer);
+  clearInterval(frameTimer);
   if (recorder && recorder.state !== "inactive") recorder.stop();
   if (stream) stream.getTracks().forEach((t) => t.stop());
   stream = null;
   preview.srcObject = null;
   $("placeholder").style.display = "";
-  recBadge.classList.remove("show");
-  $("startBtn").disabled = false;
-  $("stopBtn").disabled = true;
-  $("quality").disabled = false;
+  document.body.classList.remove("recording");
+  $("startBtn").classList.remove("rolling");
+  heartbeat();
+  if (wakeLock) {
+    wakeLock.release();
+    wakeLock = null;
+  }
   setStatus("Session saved. Check the Library.", "ok");
   loadDisk();
 }
 
-$("startBtn").addEventListener("click", startSession);
-$("stopBtn").addEventListener("click", stopSession);
+$("startBtn").addEventListener("click", () => (recording ? stopSession() : startSession()));
 
-// ---- Library ----
+// ===================== LIBRARY =====================
+
 async function loadLibrary() {
   const box = $("sessions");
   box.innerHTML = '<div class="empty">Loading…</div>';
   try {
-    const res = await fetch("/api/recordings");
+    const res = await api("/api/recordings");
     const data = await res.json();
     if (!data.length) {
-      box.innerHTML = '<div class="empty">No sessions yet. Go record your first study session!</div>';
+      box.innerHTML = '<div class="empty">No sessions yet.</div>';
       return;
     }
     box.innerHTML = "";
@@ -213,7 +406,7 @@ async function loadLibrary() {
       del.onclick = async (e) => {
         e.preventDefault();
         if (!confirm("Delete this whole session?")) return;
-        await fetch(`/api/recordings/${s.session}`, { method: "DELETE" });
+        await api(`/api/recordings/${s.session}`, { method: "DELETE" });
         loadLibrary();
         loadDisk();
       };
@@ -229,6 +422,7 @@ async function loadLibrary() {
         const v = document.createElement("video");
         v.src = `/api/recordings/${s.session}/${f}`;
         v.controls = true;
+        v.playsInline = true;
         v.preload = "metadata";
         const lab = document.createElement("div");
         lab.className = "s-meta";
@@ -247,7 +441,7 @@ async function loadLibrary() {
 
 async function loadDisk() {
   try {
-    const r = await fetch("/api/stats");
+    const r = await api("/api/stats");
     const d = await r.json();
     const mb = d.bytes / 1048576;
     const txt = mb >= 1024 ? (mb / 1024).toFixed(2) + " GB" : mb.toFixed(0) + " MB";
@@ -255,15 +449,7 @@ async function loadDisk() {
   } catch (_) {}
 }
 
+// ---- Boot ----
 loadDisk();
-
-// Keep screen awake during recording (best effort).
-let wakeLock = null;
-document.getElementById("startBtn").addEventListener("click", async () => {
-  try {
-    wakeLock = await navigator.wakeLock.request("screen");
-  } catch (_) {}
-});
-document.getElementById("stopBtn").addEventListener("click", () => {
-  if (wakeLock) { wakeLock.release(); wakeLock = null; }
-});
+loadInitialState();
+connectSSE();

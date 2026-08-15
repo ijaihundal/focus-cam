@@ -12,6 +12,7 @@ services:
       - "3000"
     volumes:
       - focus-cam-recordings:/app/recordings
+      - focus-cam-data:/app/data
     networks:
       - dokploy-network
     labels:
@@ -31,6 +32,7 @@ services:
 
 volumes:
   focus-cam-recordings:
+  focus-cam-data:
 
 networks:
   dokploy-network:

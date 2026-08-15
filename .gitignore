@@ -6,3 +6,4 @@ npm-debug.log
 *.mp4
 .env
 .env.local
+data/
