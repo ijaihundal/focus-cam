@@ -154,6 +154,13 @@ async function loadInitialState() {
       api("/api/verdicts"),
     ]);
     judgeConfig = await cfgRes.json();
+    if (judgeConfig.judgeMode === "off") {
+      document.querySelector(".feed-card")?.remove();
+      document.querySelector(".cam-settings")?.closest(".cam-card")?.insertAdjacentElement(
+        "afterend",
+        document.querySelector(".todos-card")
+      );
+    }
     todos = await todosRes.json();
     renderTodos();
     for (const v of await verdictsRes.json()) prependVerdict(v);
