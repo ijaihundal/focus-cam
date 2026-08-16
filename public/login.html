@@ -8,29 +8,47 @@
   <meta name="theme-color" content="#0f1115" />
   <title>Focus Cam · Login</title>
   <style>
-    :root { --bg:#0f1115; --panel:#181b22; --accent:#5b8cff; --text:#e7e9ee;
-      --muted:#9aa0ac; --rec:#ff4d4f; --border:#2a2f3a; }
-    * { box-sizing:border-box; margin:0; padding:0; }
+    :root { --bg:#0f1115; --panel:#181b22; --accent:#5b8cff; --accent-2:#3f6ae0;
+      --text:#e7e9ee; --muted:#9aa0ac; --rec:#ff4d4f; --border:#2a2f3a; }
+    * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
     body { background:var(--bg); color:var(--text); min-height:100vh; display:flex;
       align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,
       "Segoe UI",Roboto,Helvetica,Arial,sans-serif; padding:20px; }
-    .card { background:var(--panel); border:1px solid var(--border); border-radius:18px;
-      padding:34px 30px; width:100%; max-width:360px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:20px;
+      padding:36px 30px; width:100%; max-width:360px;
+      box-shadow:0 24px 60px rgba(0,0,0,.45); }
     .brand { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px;
-      justify-content:center; margin-bottom:6px; }
-    .brand .dot { width:13px; height:13px; border-radius:50%; background:var(--accent); }
-    .sub { text-align:center; color:var(--muted); font-size:13px; margin-bottom:24px; }
+      letter-spacing:.2px; justify-content:center; margin-bottom:6px; }
+    .brand .dot { width:13px; height:13px; border-radius:50%; background:var(--accent);
+      box-shadow:0 0 14px rgba(91,140,255,.85); }
+    .sub { text-align:center; color:var(--muted); font-size:13px; margin-bottom:26px; }
     label { display:block; font-size:13px; color:var(--muted); margin:16px 0 7px; font-weight:600; }
+    .field { position:relative; }
     input { width:100%; background:#20242e; color:var(--text); border:1px solid var(--border);
-      border-radius:10px; padding:13px; font-size:15px; outline:none; }
-    input:focus { border-color:var(--accent); }
+      border-radius:11px; padding:13px; font-size:16px; outline:none;
+      transition:border-color .15s, box-shadow .15s; }
+    input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,140,255,.16); }
+    .field input { padding-right:46px; }
+    .pw-toggle { position:absolute; right:6px; top:50%; transform:translateY(-50%);
+      background:none; border:none; color:var(--muted); cursor:pointer; padding:8px;
+      display:flex; align-items:center; border-radius:8px; transition:color .15s; }
+    .pw-toggle:hover, .pw-toggle:focus-visible { color:var(--accent); outline:none; }
     .remember { display:flex; align-items:center; gap:8px; margin-top:16px; color:var(--muted);
       font-size:13px; cursor:pointer; }
     .remember input { width:auto; }
-    .btn { width:100%; margin-top:24px; border:none; border-radius:11px; padding:14px;
-      font-size:16px; font-weight:700; cursor:pointer; color:#fff; background:var(--accent); }
-    .btn:active { transform:scale(.98); }
+    .btn { width:100%; margin-top:24px; border:none; border-radius:12px; padding:14px;
+      font-size:16px; font-weight:700; cursor:pointer; color:#fff;
+      background:linear-gradient(135deg, var(--accent), var(--accent-2));
+      transition:transform .12s, box-shadow .15s, filter .15s;
+      box-shadow:0 8px 20px rgba(91,140,255,.25); }
+    .btn:hover { filter:brightness(1.06); }
+    .btn:active { transform:scale(.98); box-shadow:0 4px 12px rgba(91,140,255,.2); }
     .err { color:var(--rec); font-size:13px; text-align:center; margin-top:14px; min-height:18px; }
+    .err.shake { animation:shake .3s; }
+    @keyframes shake {
+      0%,100% { transform:translateX(0); }
+      25% { transform:translateX(-5px); } 75% { transform:translateX(5px); }
+    }
   </style>
 </head>
 <body>
@@ -38,9 +56,26 @@
     <div class="brand"><span class="dot"></span> Focus Cam</div>
     <div class="sub">Sign in to start your session</div>
     <label for="username">Username</label>
-    <input id="username" name="username" type="text" autocomplete="username" autofocus required />
+    <input id="username" name="username" type="text" autocomplete="username"
+      autocapitalize="none" autocorrect="off" spellcheck="false" autofocus required />
     <label for="password">Password</label>
-    <input id="password" name="password" type="password" autocomplete="current-password" required />
+    <div class="field">
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button class="pw-toggle" type="button" id="pwToggle" aria-label="Show password" aria-pressed="false">
+        <svg id="eyeOpen" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <svg id="eyeClosed" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+          <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+          <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+      </button>
+    </div>
     <label class="remember"><input type="checkbox" id="remember" checked /> Stay logged in on this device</label>
     <button class="btn" type="submit">Sign in</button>
     <div class="err" id="err"></div>
@@ -48,11 +83,23 @@
   <script>
     const form = document.getElementById("form");
     const err = document.getElementById("err");
+    const pw = document.getElementById("password");
+    const pwToggle = document.getElementById("pwToggle");
+
+    pwToggle.addEventListener("click", () => {
+      const show = pw.type === "password";
+      pw.type = show ? "text" : "password";
+      document.getElementById("eyeOpen").style.display = show ? "none" : "";
+      document.getElementById("eyeClosed").style.display = show ? "" : "none";
+      pwToggle.setAttribute("aria-label", show ? "Hide password" : "Show password");
+      pwToggle.setAttribute("aria-pressed", String(show));
+    });
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       err.textContent = "";
       const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
+      const password = pw.value;
       const remember = document.getElementById("remember").checked;
       try {
         const r = await fetch("/api/login", {
@@ -65,6 +112,9 @@
           window.location.href = "/";
         } else {
           err.textContent = data.error || "Login failed";
+          err.classList.remove("shake");
+          void err.offsetWidth;
+          err.classList.add("shake");
         }
       } catch (_) {
         err.textContent = "Network error";
