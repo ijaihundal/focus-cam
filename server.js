@@ -4,6 +4,7 @@ const multer = require("multer");
 const cookieSession = require("cookie-session");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -343,8 +344,83 @@ app.post("/api/audio", (req, res) => {
   while (files.length > 40) fs.unlinkSync(path.join(RADIO_DIR, files.shift()));
   const clip = { url: `/api/audio/${name}`, mime, task: String(b.task || "").slice(0, 200), message: String(b.message || "").slice(0, 600), at: Date.now() };
   writeJson(path.join(DATA_DIR, "last_audio_meta.json"), clip);
+  const dropsLog = readJson(path.join(DATA_DIR, "drops.json"), []);
+  dropsLog.push(clip);
+  while (dropsLog.length > 100) dropsLog.shift();
+  writeJson(path.join(DATA_DIR, "drops.json"), dropsLog);
   broadcast("audio", clip);
   res.json({ ok: true, clip });
+});
+
+// ---- Music (YouTube links -> indexed tracks; yt-dlp fetches metadata+audio) ----
+const MUSIC_DIR = path.join(DATA_DIR, "music");
+const MUSIC_META = path.join(MUSIC_DIR, "library.json");
+for (const d of [MUSIC_DIR]) if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+const readMusic = () => readJson(MUSIC_META, []);
+const writeMusic = (lib) => writeJson(MUSIC_META, lib);
+
+app.get("/api/music", (req, res) => {
+  const lib = readMusic().map((m) => ({
+    id: m.id, title: m.title, artist: m.artist, cover: m.cover,
+    url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !m.file, error: m.error || null,
+  }));
+  res.json(lib);
+});
+
+app.post("/api/music", async (req, res) => {
+  const raw = String((req.body || {}).links || "");
+  const links = raw.split(/\s+/).filter((l) => /^https?:\/\//.test(l)).slice(0, 50);
+  if (!links.length) return res.status(400).json({ ok: false, error: "No links found" });
+  const lib = readMusic();
+  const added = [];
+  for (const link of links) {
+    if (lib.some((m) => m.link === link)) continue;
+    const id = `yt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    lib.push({ id, link, title: link.slice(0, 80), artist: "YouTube", cover: null, file: null, pending: true });
+    added.push(id);
+    // index async: metadata + cover + audio
+    indexYouTube(id, link);
+  }
+  writeMusic(lib);
+  res.json({ ok: true, added: added.length });
+});
+
+function indexYouTube(id, link) {
+  const dir = path.join(MUSIC_DIR, id);
+  fs.mkdirSync(dir, { recursive: true });
+  const done = (fields) => { const lib = readMusic(); const m = lib.find((x) => x.id === id); if (m) Object.assign(m, fields); writeMusic(lib); };
+  exec(`yt-dlp --no-playlist -x --audio-format mp3 --audio-quality 4 -o "${dir}/audio.%(ext)s" --print-json --no-simulate-exec "${link}"`,
+    { timeout: 10 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout) => {
+      if (err) { done({ pending: false, error: "index failed" }); return; }
+      try {
+        const info = JSON.parse(stdout.split("\n").filter(Boolean).pop());
+        const fields = {
+          title: String(info.title || id).slice(0, 120),
+          artist: String(info.uploader || info.channel || "YouTube").slice(0, 80),
+          duration: info.duration || null, pending: false, file: true,
+          cover: info.thumbnail ? `/api/music/${id}/cover.jpg` : null,
+        };
+        // download cover
+        if (info.thumbnail) {
+          exec(`curl -sL --max-time 30 "${info.thumbnail}" -o "${dir}/cover.jpg"`, () => done(fields));
+        } else done(fields);
+      } catch { done({ pending: false, error: "parse failed" }); }
+    });
+}
+
+app.get("/api/music/:id/:file", (req, res) => {
+  const { id, file } = req.params;
+  if (!/^yt_[0-9]+_[a-z0-9]+$/.test(id) || !["audio.mp3", "cover.jpg"].includes(file)) return res.status(404).send("Not found");
+  const p = path.join(MUSIC_DIR, id, file);
+  if (!fs.existsSync(p)) return res.status(404).send("Not found");
+  res.type(file.endsWith(".mp3") ? "audio/mpeg" : "image/jpeg");
+  res.set("Cache-Control", "public, max-age=86400");
+  res.sendFile(p);
+});
+
+app.get("/api/drops", (req, res) => {
+  const meta = readJson(path.join(DATA_DIR, "drops.json"), []);
+  res.json(meta.slice(0, 25).reverse());
 });
 
 app.get("/api/audio/latest", (req, res) => {

@@ -1,103 +1,180 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Focus" />
-  <meta name="theme-color" content="#0b0d12" />
-  <title>Focus</title>
-  <link rel="stylesheet" href="/style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>focus</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='40' fill='%231DB954'/></svg>">
+<style>
+:root{
+  --frame:#000; --surface:#121212; --surface-high:#1f1f1f; --surface-highest:#2a2a2a;
+  --text:#fff; --text-dim:#a7a7a7; --border:#2a2a2a; --accent:#1DB954; --warn:#f0a500;
+  --radius:8px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{
+  background:var(--frame);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:15px;line-height:1.45;
+  display:flex;flex-direction:column;max-width:680px;margin:0 auto;
+  padding-bottom:64px; /* room for player bar */
+  padding-top:env(safe-area-inset-top);
+}
+.pad{padding:0 16px}
+.overline{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);text-decoration-line:none}
+.panel{background:var(--surface);border-radius:var(--radius);overflow:hidden}
+button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
+
+/* ---------- NOW view ---------- */
+.hero{padding:22px 16px 14px}
+.hero .overline{margin-bottom:10px}
+.hero-task{font-size:clamp(1.7rem,6.4vw,2.5rem);font-weight:900;letter-spacing:-.02em;line-height:1.08;word-break:break-word}
+.hero-meta{margin-top:10px;color:var(--text-dim);font-size:13px;display:flex;gap:8px;align-items:center}
+.hero-actions{margin-top:18px;display:flex;gap:10px}
+.chip{padding:10px 16px;border-radius:22px;font-weight:700;font-size:13px;background:var(--surface-high);transition:transform .12s,background .12s}
+.chip:active{transform:scale(.97)}
+.chip.primary{background:var(--accent);color:#0e0e0e}
+.chip.done{opacity:.55}
+.empty-hero{padding:26px 16px 20px}
+.empty-title{font-size:clamp(1.5rem,5.5vw,2.1rem);font-weight:900;letter-spacing:-.02em}
+
+.section{margin-top:14px}
+.section .overline{display:block;padding:6px 16px 8px}
+.tracklist{list-style:none}
+.track{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);transition:background .12s;user-select:none}
+.track:last-child{border-bottom:none}
+.track:active{background:var(--surface-high)}
+.track .num{width:22px;text-align:center;color:var(--text-dim);font-size:13px;font-variant-numeric:tabular-nums}
+.track .body{flex:1;min-width:0}
+.track .title{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track .sub{font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track.done .title{text-decoration:line-through;color:var(--text-dim)}
+.track.np .title{color:var(--accent)}
+.track .check{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;transition:all .12s}
+.track.done .check{background:var(--accent);border-color:var(--accent);color:#0e0e0e}
+.track.np .check{border-color:var(--accent);color:var(--accent)}
+
+/* equalizer bars for active task */
+.eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px;width:14px}
+.eq i{width:3px;background:var(--accent);animation:eq 1s ease infinite}
+.eq i:nth-child(2){animation-delay:.2s}.eq i:nth-child(3){animation-delay:.4s}
+@keyframes eq{0%,100%{height:3px}50%{height:12px}}
+
+/* ---------- player bar ---------- */
+.pbar{position:fixed;bottom:0;left:0;right:0;background:var(--surface-highest);border-top:1px solid var(--border);
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom));max-width:680px;margin:0 auto;z-index:50}
+.pbar .row{display:flex;align-items:center;gap:12px}
+.pbar .art{width:44px;height:44px;border-radius:6px;background:linear-gradient(135deg,#1a1a1a,#333);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px}
+.pbar .meta{flex:1;min-width:0}
+.pbar .label{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--accent);text-transform:uppercase}
+.pbar .what{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pbar .play{width:38px;height:38px;border-radius:50%;background:var(--accent);color:#0e0e0e;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pbar .live-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s ease infinite;margin-left:2px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ---------- radio view ---------- */
+.rhead{padding:22px 16px 12px}
+.rhead h1{font-size:1.5rem;font-weight:900;letter-spacing:-.02em}
+.nowdrop{margin:14px 16px;padding:16px}
+.nowdrop .msg{margin-top:8px;font-size:14px;color:var(--text);opacity:.9}
+.nowdrop audio{width:100%;margin-top:12px;display:block}
+.history{margin-top:6px}
+.drop .when{width:52px;text-align:center;color:var(--text-dim);font-size:12px;font-variant-numeric:tabular-nums}
+
+/* ---------- board view ---------- */
+.bhead{padding:22px 16px 8px}
+.bhead h1{font-size:1.5rem;font-weight:900;letter-spacing:-.02em}
+.bhead .sub{color:var(--text-dim);font-size:13px;margin-top:4px}
+.addbar{display:flex;gap:8px;margin:14px 16px}
+.addbar input{flex:1;background:var(--surface-high);border:1px solid var(--border);border-radius:22px;padding:11px 16px;color:var(--text);font:inherit;font-size:14px;outline:none}
+.addbar input:focus{border-color:var(--accent)}
+.addbar button{width:42px;height:42px;border-radius:50%;background:var(--accent);color:#0e0e0e;font-size:20px;flex-shrink:0}
+
+/* ---------- music view ---------- */
+.mhead{padding:22px 16px 12px}
+.mhead h1{font-size:1.5rem;font-weight:900}
+.linkbar{display:flex;gap:8px;margin:12px 16px}
+.linkbar input{flex:1;background:var(--surface-high);border:1px solid var(--border);border-radius:22px;padding:11px 16px;color:var(--text);font:inherit;font-size:13px;outline:none;min-width:0}
+.linkbar button{padding:0 18px;border-radius:22px;background:var(--accent);color:#0e0e0e;font-weight:700;font-size:13px}
+.mstatus{padding:0 16px 8px;color:var(--text-dim);font-size:12px}
+.mt .art{width:44px;height:44px;border-radius:6px;object-fit:cover;background:var(--surface-high);flex-shrink:0}
+.mt.playing .title{color:var(--accent)}
+
+/* ---------- nav ---------- */
+.nav{position:fixed;bottom:0;left:0;right:0;display:none;background:var(--frame);border-top:1px solid var(--border);
+  padding:8px 0 calc(8px + env(safe-area-inset-bottom));z-index:60}
+.nav.show{display:flex}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--text-dim);font-size:10px;font-weight:600;padding:4px 0}
+.nav button.active{color:var(--text)}
+.nav button .ic{font-size:20px;line-height:1}
+@media(min-width:700px){
+  body{flex-direction:row;max-width:1100px;gap:16px;padding:24px;padding-bottom:96px}
+  .nav{max-width:1100px;margin:0 auto}
+  main{flex:1;min-width:0}
+}
+[hidden]{display:none!important}
+</style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="dot"></span> FOCUS</div>
-    <div class="topbar-right">
-      <div class="live" id="liveDot"><span class="live-dot"></span><span id="liveText">live</span></div>
-      <button class="linklike" id="logoutBtn">sign out</button>
+
+<main id="view-now">
+  <div id="heroWrap"></div>
+  <div class="section">
+    <span class="overline pad">Up next</span>
+    <ul class="tracklist panel" id="queueList" style="margin:0 16px"></ul>
+  </div>
+  <div class="section">
+    <span class="overline pad">Completed today</span>
+    <ul class="tracklist panel" id="doneList" style="margin:0 16px"></ul>
+  </div>
+</main>
+
+<main id="view-radio" hidden>
+  <div class="rhead"><h1>Warden Radio</h1><div class="sub" style="color:var(--text-dim);font-size:13px;margin-top:4px">Sam speaks between your songs</div></div>
+  <div class="nowdrop panel" id="latestDrop">Loading…</div>
+  <div class="section"><span class="overline pad">History</span>
+    <ul class="tracklist panel" id="dropList" style="margin:0 16px"></ul>
+  </div>
+</main>
+
+<main id="view-board" hidden>
+  <div class="bhead"><h1>The Board</h1><div class="sub" id="boardSub">Three things. One at a time.</div></div>
+  <div class="addbar"><input id="addInput" placeholder="Add a task…" maxlength="200" autocomplete="off"><button id="addBtn">+</button></div>
+  <ul class="tracklist panel" id="boardList" style="margin:0 16px"></ul>
+</main>
+
+<main id="view-music" hidden>
+  <div class="mhead"><h1>Music</h1><div class="sub" style="color:var(--text-dim);font-size:13px;margin-top:4px">Paste YouTube links, one per line</div></div>
+  <div class="linkbar"><input id="linkInput" placeholder="https://youtube.com/…" autocomplete="off"><button id="linkBtn">Index</button></div>
+  <div class="mstatus" id="musicStatus"></div>
+  <ul class="tracklist panel" id="musicList" style="margin:0 16px"></ul>
+</main>
+
+<!-- persistent player bar -->
+<div class="pbar" id="pbar" hidden>
+  <div class="row">
+    <div class="art" id="pbArt">🎙</div>
+    <div class="meta">
+      <div class="label" id="pbLabel">Warden radio</div>
+      <div class="what" id="pbWhat">—</div>
     </div>
-  </header>
+    <button class="play" id="pbPlay">▶</button>
+    <div class="live-dot"></div>
+  </div>
+</div>
 
-  <main id="main">
+<nav class="nav" id="nav">
+  <button data-v="now" class="active"><span class="ic">◉</span>now</button>
+  <button data-v="radio"><span class="ic">◍</span>radio</button>
+  <button data-v="board"><span class="ic">☰</span>board</button>
+  <button data-v="music"><span class="ic">♫</span>music</button>
+</nav>
 
-    <!-- ============ FOCUS VIEW ============ -->
-    <section id="view-record" class="view">
-
-      <div class="card now-card" id="nowCard">
-        <div class="now-label">RIGHT NOW</div>
-        <div class="now-task" id="nowTask">Waiting for the plan…</div>
-        <div class="now-meta" id="nowMeta">—</div>
-      </div>
-
-      <div class="card feed-card">
-        <div class="section-head">THE WARDEN</div>
-        <div id="verdicts" class="verdicts">
-          <div class="empty">Silent, for now.</div>
-        </div>
-      </div>
-
-      <div class="card cam-card">
-        <div class="cam-wrap">
-          <video id="preview" playsinline muted autoplay></video>
-          <div id="placeholder" class="cam-off">
-            <div class="cam-off-dot"></div>
-            <span>camera off</span>
-          </div>
-          <div id="recBadge" class="rec-badge"><span class="rec-pip"></span><span id="recText">REC</span><span id="timer">00:00:00</span></div>
-        </div>
-        <div class="cam-settings">
-          <label>quality
-            <select id="quality">
-              <option value="480">480p</option>
-              <option value="720" selected>720p</option>
-              <option value="1080">1080p</option>
-            </select>
-          </label>
-          <label>segment
-            <select id="segLen">
-              <option value="5">5 min</option>
-              <option value="10" selected>10 min</option>
-            </select>
-          </label>
-        </div>
-      </div>
-
-      <div class="card todos-card">
-        <div class="section-head row">
-          <span>THE PLAN</span>
-          <span class="muted" id="todosUpdated"></span>
-        </div>
-        <ul id="todoList" class="todos"><li class="empty">No tasks yet — the agent sets them.</li></ul>
-      </div>
-
-    </section>
-
-    <!-- ============ LIBRARY VIEW ============ -->
-    <section id="view-library" class="view" style="display:none">
-      <div class="card">
-        <div class="section-head row"><span>SESSIONS</span><span class="muted" id="disk"></span></div>
-        <div id="sessions" class="sessions"><div class="empty">Loading…</div></div>
-      </div>
-    </section>
-
-  </main>
-
-  <nav class="bottombar">
-    <button class="navbtn active" id="tabFocus" data-view="record">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg>
-      <span>Focus</span>
-    </button>
-    <button id="startBtn" class="rec-btn" aria-label="start recording"><span class="rec-pip-big"></span></button>
-    <button class="navbtn" id="tabLibrary" data-view="library">
-      <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 5v14" stroke="currentColor" stroke-width="2"/><path d="M14 5v14" stroke="currentColor" stroke-width="2"/></svg>
-      <span>Library</span>
-    </button>
-  </nav>
-
-  <div id="status" class="status"></div>
-
-  <script src="/app.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>
