@@ -100,8 +100,8 @@ function setVersion(v) {
   const was = player.audio.currentTime;
   const wasPlaying = player.playing;
   player.version = v; localStorage.setItem("focus_ver", v);
-  if (v === "sub" && !t.urlSub) sublimate(t, () => { swapMid(was, wasPlaying); });
-  else swapMid(was, wasPlaying);
+  if (v === "sub" && !t.urlSub) sublimate(t, () => { swapMid(t, wasPlaying); });
+  else swapMid(t, wasPlaying);
 }
 function swapMid(t, wasPlaying) {
   const at = player.audio.currentTime;
