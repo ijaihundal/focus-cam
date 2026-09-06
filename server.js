@@ -4,6 +4,7 @@ const multer = require("multer");
 const cookieSession = require("cookie-session");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const https = require("https");
 const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -362,7 +363,8 @@ const writeMusic = (lib) => writeJson(MUSIC_META, lib);
 app.get("/api/music", (req, res) => {
   const lib = readMusic().map((m) => ({
     id: m.id, title: m.title, artist: m.artist, cover: m.cover,
-    url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !m.file, error: m.error || null,
+    url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !m.file,
+    error: m.error || null, locked: !!m.locked,
   }));
   res.json(lib);
 });
@@ -389,23 +391,44 @@ function indexYouTube(id, link) {
   const dir = path.join(MUSIC_DIR, id);
   fs.mkdirSync(dir, { recursive: true });
   const done = (fields) => { const lib = readMusic(); const m = lib.find((x) => x.id === id); if (m) Object.assign(m, fields); writeMusic(lib); };
-  exec(`yt-dlp --no-playlist -x --audio-format mp3 --audio-quality 4 -o "${dir}/audio.%(ext)s" --print-json --no-simulate-exec "${link}"`,
-    { timeout: 10 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout) => {
-      if (err) { done({ pending: false, error: "index failed" }); return; }
+  // 1) instant metadata via oEmbed (never bot-walled): title + artist + cover, regardless of audio
+  fetchOEmbed(link, (meta) => {
+    if (meta) {
+      done({ title: meta.title, artist: meta.artist, cover: meta.cover ? `/api/music/${id}/cover.jpg` : null });
+      if (meta.cover) exec(`curl -sL --max-time 30 "${meta.cover}" -o "${dir}/cover.jpg"`).on("close", () => broadcast("music", {}));
+    } else {
+      done({ pending: false, error: "could not read link" });
+      return;
+    }
+    // 2) audio via yt-dlp (needs cookies on datacenter IPs)
+    exec(`yt-dlp --no-playlist -x --audio-format mp3 --audio-quality 4 -o "${dir}/audio.%(ext)s" --print-json --no-simulate-exec "${link}"`,
+      { timeout: 10 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout) => {
+        if (err) { done({ pending: false, error: "locked", locked: true }); broadcast("music", {}); return; }
+        try {
+          const info = JSON.parse(stdout.split("\n").filter(Boolean).pop());
+          done({ title: String(info.title || id).slice(0, 120), artist: String(info.uploader || info.channel || "YouTube").slice(0, 80), duration: info.duration || null, pending: false, file: true, error: null, locked: false });
+          broadcast("music", {});
+        } catch { done({ pending: false, error: "parse failed" }); }
+      });
+  });
+}
+
+function fetchOEmbed(link, cb) {
+  const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(link)}&format=json`;
+  https.get(url, { timeout: 10000 }, (r) => {
+    if (r.statusCode !== 200) { cb(null); return; }
+    let body = "";
+    r.on("data", (c) => (body += c));
+    r.on("end", () => {
       try {
-        const info = JSON.parse(stdout.split("\n").filter(Boolean).pop());
-        const fields = {
-          title: String(info.title || id).slice(0, 120),
-          artist: String(info.uploader || info.channel || "YouTube").slice(0, 80),
-          duration: info.duration || null, pending: false, file: true,
-          cover: info.thumbnail ? `/api/music/${id}/cover.jpg` : null,
-        };
-        // download cover
-        if (info.thumbnail) {
-          exec(`curl -sL --max-time 30 "${info.thumbnail}" -o "${dir}/cover.jpg"`, () => done(fields));
-        } else done(fields);
-      } catch { done({ pending: false, error: "parse failed" }); }
+        const o = JSON.parse(body);
+        // video id for hi-res cover
+        const m = link.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
+        const cover = m ? `https://i.ytimg.com/vi/${m[1]}/maxresdefault.jpg` : o.thumbnail_url;
+        cb({ title: String(o.title || "").slice(0, 120), artist: String(o.author_name || "YouTube").slice(0, 80), cover });
+      } catch { cb(null); }
     });
+  }).on("error", () => cb(null));
 }
 
 app.get("/api/music/:id/:file", (req, res) => {

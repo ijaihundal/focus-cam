@@ -117,22 +117,62 @@ function renderRadio() {
   $("latestDrop").innerHTML = d ? `
     <div class="overline">Latest drop · ${new Date(d.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
     <div class="msg">${esc(d.message)}</div>
-    <audio controls preload="none" src="${d.url}${d.mime === "audio/mpeg" ? "" : ""}" id="radioAudio"></audio>` : "No drops yet.";
+    <div class="custom-player" id="cp">
+      <button class="cp-play" id="cpPlay">▶</button>
+      <div class="cp-track" id="cpTrack"><div class="cp-fill" id="cpFill"></div></div>
+      <div class="cp-time" id="cpTime">0:00</div>
+    </div>
+    <audio preload="none" src="${d.url}" id="radioAudio" style="display:none"></audio>` : "No drops yet.";
   $("dropList").innerHTML = drops.length > 1
     ? drops.slice(1, 21).map((x) => `<li class="track drop"><div class="when">${new Date(x.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
         <div class="body"><div class="title" style="font-weight:500">${esc(x.message)}</div></div></li>`).join("")
     : `<li class="track"><div class="body" style="color:var(--text-dim)">History builds every 4 minutes.</div></li>`;
 }
+// wire the custom drop player each render
+const ra = $("radioAudio");
+if (ra) {
+  const play = $("cpPlay"), fill = $("cpFill"), time = $("cpTime"), track = $("cpTrack");
+  const fmt = (s) => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+  play.onclick = () => { if (ra.paused) ra.play(); else ra.pause(); };
+  ra.onplay = () => (play.textContent = "❚❚");
+  ra.onpause = () => (play.textContent = "▶");
+  ra.ontimeupdate = () => {
+    if (ra.duration) { fill.style.width = `${(ra.currentTime/ra.duration)*100}%`; time.textContent = fmt(ra.currentTime); }
+  };
+  track.onclick = (e) => {
+    const r = track.getBoundingClientRect();
+    if (ra.duration) ra.currentTime = ((e.clientX - r.left) / r.width) * ra.duration;
+  };
+}
 
 // ---------------- MUSIC ----------------
 function renderMusic() {
-  $("musicList").innerHTML = music.length
-    ? music.map((m, i) => `<li class="track mt ${m.playing ? "playing" : ""}">
-        ${m.cover ? `<img class="art" src="${m.cover}" alt="">` : `<div class="art" style="display:flex;align-items:center;justify-content:center">♪</div>`}
-        <div class="body"><div class="title">${esc(m.title)}</div><div class="sub">${esc(m.artist || "YouTube")}</div></div>
-        <button class="check" data-play="${i}">${m.playing ? "❚❚" : "▶"}</button></li>`).join("")
-    : `<li class="track"><div class="body" style="color:var(--text-dim)">Paste a YouTube link above, or a list of them, one per line. Covers and titles index automatically.</div></li>`;
-  document.querySelectorAll("[data-play]").forEach((b) => b.addEventListener("click", () => playMusic(music[b.dataset.play])));
+  const grid = $("musicList");
+  if (!music.length) {
+    grid.innerHTML = `<div class="empty-lib">
+      <div class="empty-art">♫</div>
+      <div class="empty-title">Your library is empty</div>
+      <div class="empty-sub">Paste YouTube links above, they become cards with real covers and titles in seconds. Audio unlocks once YouTube is connected.</div></div>`;
+    return;
+  }
+  grid.innerHTML = `<div class="lib-grid">` + music.map((m, i) => `
+    <div class="card ${m.playing ? "playing" : ""}" data-idx="${i}">
+      <div class="card-art">
+        ${m.cover ? `<img src="${m.cover}" alt="" loading="lazy" onerror="this.style.display='none';this.parentElement.classList.add('noimg')">` : ""}
+        <span class="provider yt" title="YouTube">▶</span>
+        ${m.url
+          ? `<button class="card-play" data-play="${i}" aria-label="play">${m.playing ? "❚❚" : "▶"}</button>`
+          : m.pending
+            ? `<div class="card-state shimmer">fetching</div>`
+            : `<div class="card-state lock" data-cookies="1" title="Connect YouTube to unlock audio">🔒 connect</div>`}
+      </div>
+      <div class="card-title">${esc(m.title)}</div>
+      <div class="card-sub">${m.playing ? `<span class="eq"><i></i><i></i><i></i></span> ` : ""}${esc(m.artist || "YouTube")}</div>
+    </div>`).join("") + `</div>`;
+  document.querySelectorAll("[data-play]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); playMusic(music[b.dataset.play]); }));
+  document.querySelectorAll("[data-cookies]").forEach((b) => b.addEventListener("click", () => {
+    setStatus("Audio is locked by YouTube. Send your cookies.txt to the bot to unlock everything.", "warn");
+  }));
 }
 
 // ---------------- persistent player ----------------
@@ -162,7 +202,11 @@ function playDrop(d) {
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: d.message?.slice(0, 60) || "Warden radio", artist: "Sam · the warden", album: "focus" });
 }
 function playMusic(m) {
-  if (!m || !m.url) return;
+  if (!m) return;
+  if (!m.url) {
+    setStatus(m.pending ? "Still fetching that one." : "Audio locked by YouTube, send cookies.txt to the bot to unlock.", "warn");
+    return;
+  }
   stopCurrent(); curMode = "music";
   music.forEach((x) => (x.playing = false)); m.playing = true; renderMusic();
   musicListening = true; reportMusicState(); // warden: hold your fire
@@ -194,6 +238,7 @@ function nextMusic(cur) {
 function connectSSE() {
   const es = new EventSource("/api/events");
   es.addEventListener("todos", (e) => { todos = JSON.parse(e.data); renderNow(); renderBoard(); });
+  es.addEventListener("music", () => refreshMusic());
   es.addEventListener("audio", (e) => {
     const clip = JSON.parse(e.data);
     if (playedClips.has(clip.url)) return; // dedupe — never double-play
@@ -223,6 +268,7 @@ $("linkBtn").addEventListener("click", async () => {
 async function loadMusic() {
   try { const r = await api("/api/music"); music = await r.json(); renderMusic(); } catch (_) {}
 }
+const refreshMusic = loadMusic;
 
 // ---------------- boot ----------------
 (async function boot() {
