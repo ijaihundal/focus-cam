@@ -364,6 +364,7 @@ app.get("/api/music", (req, res) => {
   const lib = readMusic().map((m) => ({
     id: m.id, title: m.title, artist: m.artist, cover: m.cover,
     url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !!m.pending && !m.file,
+    hasSub: !!(m.file && require("fs").existsSync(path.join(MUSIC_DIR, m.id, "audio_sub.mp3"))),
     error: m.error || null, locked: !!m.locked,
   }));
   res.json(lib);
@@ -450,12 +451,33 @@ function fetchOEmbed(link, cb) {
 
 app.get("/api/music/:id/:file", (req, res) => {
   const { id, file } = req.params;
-  if (!/^yt_[0-9]+_[a-z0-9]+$/.test(id) || !["audio.mp3", "cover.jpg"].includes(file)) return res.status(404).send("Not found");
-  const p = path.join(MUSIC_DIR, id, file);
+  if (!/^yt_[0-9]+_[a-z0-9]+$/.test(id) || !["audio.mp3", "audio_sub.mp3", "cover.jpg"].includes(file)) return res.status(404).send("Not found");
+  let p = path.join(MUSIC_DIR, id, file);
+  // sub version falls back to clean mix if the nightly bed hasn't rendered yet
+  if (file === "audio_sub.mp3" && !fs.existsSync(p)) p = path.join(MUSIC_DIR, id, "audio.mp3");
   if (!fs.existsSync(p)) return res.status(404).send("Not found");
-  res.type(file.endsWith(".mp3") ? "audio/mpeg" : "image/jpeg");
-  res.set("Cache-Control", "public, max-age=86400");
+  res.type("audio/mpeg");
+  res.set("Cache-Control", "public, max-age=300");
   res.sendFile(p);
+});
+
+// ---- dual versions: affirmation bed (0.24) mixed under full track, server-side ----
+const { exec: execFfmpeg } = require("child_process");
+function subVersionReady(id) { return fs.existsSync(path.join(MUSIC_DIR, id, "audio_sub.mp3")); }
+
+app.post("/api/music/:id/sublimate", (req, res) => {
+  const { id } = req.params;
+  if (!/^yt_[0-9]+_[a-z0-9]+$/.test(id)) return res.status(400).json({ ok: false });
+  const src = path.join(MUSIC_DIR, id, "audio.mp3");
+  if (!fs.existsSync(src)) return res.status(404).json({ ok: false, error: "no audio" });
+  if (subVersionReady(id)) return res.json({ ok: true, cached: true });
+  const bed = path.join(MUSIC_DIR, "aff_bed.mp3");
+  if (!fs.existsSync(bed)) return res.status(503).json({ ok: false, error: "no bed" });
+  const out = path.join(MUSIC_DIR, id, "audio_sub.mp3");
+  execFfmpeg(`ffmpeg -y -loglevel error -i "${src}" -stream_loop -1 -i "${bed}" -filter_complex "[1:a]volume=0.24[voice];[0:a][voice]amix=inputs=2:duration=first:dropout_transition=0:weights=1 1" -t 3600 "${out}"`, { timeout: 5 * 60 * 1000 }, (err) => {
+    res.json({ ok: !err });
+    if (!err) broadcast("music", {});
+  });
 });
 
 app.get("/api/drops", (req, res) => {
