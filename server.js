@@ -223,7 +223,7 @@ function requireAuth(req, res, next) {
   // Vision-tool path: the frame endpoint also accepts ?token= (URL-only clients).
   if (
     AGENT_TOKEN &&
-    req.path === "/api/frame/latest.jpg" &&
+    (req.path === "/api/frame/latest.jpg" || req.path.startsWith("/api/audio/")) &&
     safeEqual(req.query.token || "", AGENT_TOKEN)
   ) {
     req.isAgent = true;
