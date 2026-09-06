@@ -154,7 +154,8 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 .nav button.active{color:var(--text)}
 .nav button .ic{font-size:20px;line-height:1}
 
-/* ---------- DESKTOP ≥900px: sidebar + content ---------- */
+/* desktop sidebar: hidden on mobile, shown by media query */
+.sidebar{display:none}
 @media(min-width:900px){
   body{display:flex;flex-direction:row;max-width:none;padding:0 0 calc(var(--pbar-h) + 16px) 0}
   .sidebar{display:flex;flex-direction:column;width:230px;flex-shrink:0;background:var(--frame);
@@ -177,7 +178,7 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 <body>
 
 <!-- desktop sidebar -->
-<aside class="sidebar" style="display:none">
+<aside class="sidebar">
   <div class="logo">focus</div>
   <button data-v="now" class="active sb"><span class="ic">◉</span>Now</button>
   <button data-v="radio" class="sb"><span class="ic">◍</span>Radio</button>
@@ -272,8 +273,8 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 // sidebar buttons share the nav handler
 document.querySelectorAll(".sb").forEach((b) => b.addEventListener("click", () => {
   document.querySelectorAll(".sb").forEach((x) => x.classList.toggle("active", x === b));
+  show(b.dataset.v);
 }));
-if (window.matchMedia("(min-width:900px)").matches) document.querySelector(".sidebar").style.display = "flex";
 </script>
 <script src="/app.js"></script>
 </body>

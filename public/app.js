@@ -425,6 +425,7 @@ const views = ["now", "radio", "board", "music"];
 function show(v) {
   views.forEach((x) => { $("view-" + x).hidden = x !== v; });
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+  document.querySelectorAll(".sb").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
   window.scrollTo(0, 0);
 }
 document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => show(b.dataset.v)));
