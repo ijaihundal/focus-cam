@@ -328,6 +328,41 @@ function sanitizeVerdict(body) {
   };
 }
 
+// ---- Radio audio (warden voice clips; agent writes, phone plays) ----
+const RADIO_DIR = path.join(DATA_DIR, "radio");
+if (!fs.existsSync(RADIO_DIR)) fs.mkdirSync(RADIO_DIR, { recursive: true });
+
+app.post("/api/audio", (req, res) => {
+  const b = req.body || {};
+  if (!b.audio) return res.status(400).json({ ok: false, error: "Missing audio" });
+  const mime = ["audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav"].includes(b.mime) ? b.mime : "audio/ogg";
+  const name = `clip_${Date.now()}.${mime === "audio/mpeg" ? "mp3" : mime === "audio/mp4" ? "m4a" : mime === "audio/wav" ? "wav" : "ogg"}`;
+  fs.writeFileSync(path.join(RADIO_DIR, name), Buffer.from(b.audio, "base64"));
+  // keep the last 40 clips
+  const files = fs.readdirSync(RADIO_DIR).sort();
+  while (files.length > 40) fs.unlinkSync(path.join(RADIO_DIR, files.shift()));
+  const clip = { url: `/api/audio/${name}`, mime, task: String(b.task || "").slice(0, 200), message: String(b.message || "").slice(0, 600), at: Date.now() };
+  broadcast("audio", clip);
+  res.json({ ok: true, clip });
+});
+
+app.get("/api/audio/latest", (req, res) => {
+  const files = fs.readdirSync(RADIO_DIR).sort();
+  if (!files.length) return res.status(404).json({ ok: false, error: "No clips yet" });
+  const name = files[files.length - 1];
+  const meta = readJson(path.join(DATA_DIR, "last_audio_meta.json"), {});
+  res.json({ url: `/api/audio/${name}`, ...meta });
+});
+
+app.get("/api/audio/:file", (req, res) => {
+  const name = safeName(req.params.file, "clip.ogg").replace(/^(clip_\d+\.)(ogg|mp3|m4a|wav)$/, (m, a, ext) => a + ext);
+  const p = path.join(RADIO_DIR, name);
+  if (!fs.existsSync(p)) return res.status(404).send("Not found");
+  res.set("Cache-Control", "no-store");
+  res.type(name.endsWith(".mp3") ? "audio/mpeg" : name.endsWith(".m4a") ? "audio/mp4" : name.endsWith(".wav") ? "audio/wav" : "audio/ogg");
+  res.sendFile(p);
+});
+
 app.post("/api/verdict", (req, res) => {
   const v = sanitizeVerdict(req.body);
   const all = readJson(VERDICTS_FILE, []);

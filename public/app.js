@@ -140,10 +140,28 @@ function connectSSE() {
     $("todosUpdated").textContent = "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   });
   es.addEventListener("verdict", (e) => prependVerdict(JSON.parse(e.data)));
+  es.addEventListener("audio", (e) => playRadioClip(JSON.parse(e.data)));
   es.addEventListener("presence", (e) => {
     const p = JSON.parse(e.data);
     if (!p.recording && recording) return; // our own state rules
   });
+}
+
+// ---- Warden radio: auto-play incoming voice clips ----
+let lastPlayedAt = 0;
+function playRadioClip(clip) {
+  const audio = new Audio(clip.url);
+  audio.play().catch(() => {
+    // Autoplay can be blocked until first user interaction; surface a tap-to-play chip.
+    setStatus("Warden has words — tap anywhere to hear.", "ok");
+    const unlock = () => { audio.play(); document.removeEventListener("click", unlock); document.removeEventListener("touchstart", unlock); };
+    document.addEventListener("click", unlock);
+    document.addEventListener("touchstart", unlock);
+  });
+  lastPlayedAt = Date.now();
+  setStatus("Sam: " + (clip.task || "orientation"), "ok");
+  // also show as a verdict entry so it lands in the feed
+  prependVerdict({ verdict: "message", source: "agent", task: clip.task || "", note: "", message: "🔊 " + (clip.message || ""), at: clip.at || Date.now() });
 }
 
 async function loadInitialState() {
