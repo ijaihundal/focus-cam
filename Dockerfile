@@ -1,4 +1,6 @@
 FROM node:22-alpine
+# yt-dlp for music indexing
+RUN apk add --no-cache python3 py3-pip ffmpeg && pip3 install --break-system-packages --quiet yt-dlp
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
