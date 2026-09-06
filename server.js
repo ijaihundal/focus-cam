@@ -401,7 +401,7 @@ function indexYouTube(id, link) {
       return;
     }
     // 2) audio via yt-dlp (needs cookies on datacenter IPs)
-    exec(`yt-dlp --no-playlist -x --audio-format mp3 --audio-quality 4 -o "${dir}/audio.%(ext)s" --print-json --no-simulate-exec "${link}"`,
+    exec(`yt-dlp --no-playlist --cookies "${MUSIC_DIR}/cookies.txt" --remote-components ejs:github -x --audio-format mp3 --audio-quality 4 -o "${dir}/audio.%(ext)s" --print-json --no-simulate-exec "${link}"`,
       { timeout: 10 * 60 * 1000, maxBuffer: 50 * 1024 * 1024 }, (err, stdout) => {
         if (err) { done({ pending: false, error: "locked", locked: true }); broadcast("music", {}); return; }
         try {
