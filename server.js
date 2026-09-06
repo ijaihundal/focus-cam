@@ -424,7 +424,8 @@ function fetchOEmbed(link, cb) {
         const o = JSON.parse(body);
         // video id for hi-res cover
         const m = link.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/);
-        const cover = m ? `https://i.ytimg.com/vi/${m[1]}/maxresdefault.jpg` : o.thumbnail_url;
+        // maxres doesn't exist for older videos; oEmbed thumbnail_url always works
+        const cover = o.thumbnail_url && o.thumbnail_url.startsWith("http") ? o.thumbnail_url : (m ? `https://i.ytimg.com/vi/${m[1]}/hqdefault.jpg` : null);
         cb({ title: String(o.title || "").slice(0, 120), artist: String(o.author_name || "YouTube").slice(0, 80), cover });
       } catch { cb(null); }
     });
