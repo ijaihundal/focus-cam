@@ -116,13 +116,14 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 /* ---------- NOW PLAYING sheet ---------- */
 .np{position:fixed;inset:0;background:linear-gradient(180deg,#1a1a1a 0%,#0a0a0a 100%);z-index:80;
   transform:translateY(100%);transition:transform .28s cubic-bezier(.32,.72,.24,1);
-  display:flex;flex-direction:column;padding:calc(16px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom))}
+  display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom));
+  overflow-y:auto}
 .np.open{transform:translateY(0)}
-.np .grab{width:36px;height:4px;border-radius:2px;background:#3a3a3a;margin:0 auto 14px}
-.np .top{display:flex;align-items:center;justify-content:space-between}
+.np .grab{width:36px;height:4px;border-radius:2px;background:#3a3a3a;margin:0 auto 10px;flex-shrink:0}
+.np .top{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .np .top .overline{font-size:10px}
-.np .artwrap{flex:1;display:flex;align-items:center;justify-content:center;padding:24px 0}
-.np .artwrap img{width:min(78vw,340px);aspect-ratio:1;object-fit:cover;border-radius:10px;background:#1a1a1a}
+.np .artwrap{flex:0 1 auto;display:flex;align-items:center;justify-content:center;padding:10px 0;min-height:0}
+.np .artwrap img{width:min(78vw,340px,52vh);aspect-ratio:1;object-fit:cover;border-radius:10px;background:#1a1a1a}
 .np .meta .t{font-size:1.25rem;font-weight:800;letter-spacing:-.01em}
 .np .meta .a{color:var(--text-dim);font-size:14px;margin-top:2px}
 .np .nptrack{margin-top:20px;height:4px;border-radius:2px;background:#2c2c2c;position:relative;cursor:pointer}
