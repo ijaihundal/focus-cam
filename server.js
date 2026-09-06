@@ -355,11 +355,12 @@ app.get("/api/audio/latest", (req, res) => {
 });
 
 app.get("/api/audio/:file", (req, res) => {
-  const name = safeName(req.params.file, "clip.ogg").replace(/^(clip_\d+\.)(ogg|mp3|m4a|wav)$/, (m, a, ext) => a + ext);
-  const p = path.join(RADIO_DIR, name);
+  const m = String(req.params.file || "").match(/^clip_\d+\.(ogg|mp3|m4a|wav)$/);
+  if (!m) return res.status(404).send("Not found");
+  const p = path.join(RADIO_DIR, m[0]);
   if (!fs.existsSync(p)) return res.status(404).send("Not found");
   res.set("Cache-Control", "no-store");
-  res.type(name.endsWith(".mp3") ? "audio/mpeg" : name.endsWith(".m4a") ? "audio/mp4" : name.endsWith(".wav") ? "audio/wav" : "audio/ogg");
+  res.type(m[1] === "mp3" ? "audio/mpeg" : m[1] === "m4a" ? "audio/mp4" : m[1] === "wav" ? "audio/wav" : "audio/ogg");
   res.sendFile(p);
 });
 
