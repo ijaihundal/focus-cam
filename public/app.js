@@ -97,13 +97,18 @@ function renderAll() { renderNow(); renderBoard(); renderMusic(); }
 
 $("addBtn").addEventListener("click", addTask);
 $("addInput").addEventListener("keydown", (e) => { if (e.key === "Enter") addTask(); });
+// task added from UI → flag for the warden's next 4-min chore window
+let choreNote = null;
 function addTask() {
   const v = $("addInput").value.trim(); if (!v) return;
   const id = String(Date.now());
   const none = !todos.some((t) => t.status === "active" || t.status === "pending");
   todos.push({ id, title: v.slice(0, 200), status: none ? "active" : "pending", note: "" });
+  choreNote = v.slice(0, 200); // warden will acknowledge next drop
   $("addInput").value = "";
   pushTodos();
+  fetch("/api/chores", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "task_added", title: choreNote }) }).catch(() => {});
 }
 
 // ---------------- RADIO ----------------
@@ -132,6 +137,16 @@ function renderMusic() {
 
 // ---------------- persistent player ----------------
 let curAudio = null, curMode = null; // mode: 'drop' | 'music'
+const playedClips = new Set();
+let musicListening = false;
+let musicStoppedAt = 0;
+
+// tell backend we're listening to music (warden stays quiet)
+function reportMusicState() {
+  fetch("/api/music-state", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ listening: musicListening }) }).catch(() => {});
+}
+setInterval(reportMusicState, 60000);
 function stopCurrent() { if (curAudio) { curAudio.pause(); if (curMode === "music") music.forEach((m) => (m.playing = false)); } }
 function setBar(label, what, playing, icon) {
   $("pbar").hidden = false; $("pbLabel").textContent = label; $("pbWhat").textContent = what;
@@ -150,6 +165,7 @@ function playMusic(m) {
   if (!m || !m.url) return;
   stopCurrent(); curMode = "music";
   music.forEach((x) => (x.playing = false)); m.playing = true; renderMusic();
+  musicListening = true; reportMusicState(); // warden: hold your fire
   curAudio = new Audio(m.url);
   curAudio.play().catch(() => {});
   setBar("Music", m.title, true, "♫");
@@ -157,6 +173,9 @@ function playMusic(m) {
   $("pbPlay").onclick = () => {
     if (curAudio.paused) { curAudio.play(); m.playing = true; setBar("Music", m.title, true, "♫"); }
     else { curAudio.pause(); m.playing = false; setBar("Music", m.title, false, "♫"); }
+    musicListening = m.playing;
+    if (!m.playing) musicStoppedAt = Date.now();
+    reportMusicState();
     renderMusic();
   };
   if ("mediaSession" in navigator) {
@@ -168,6 +187,7 @@ function nextMusic(cur) {
   cur.playing = false;
   const i = music.indexOf(cur); const next = music[(i + 1) % music.length];
   if (next) playMusic(next);
+  else { musicListening = false; musicStoppedAt = Date.now(); reportMusicState(); }
 }
 
 // ---------------- SSE ----------------
@@ -176,9 +196,16 @@ function connectSSE() {
   es.addEventListener("todos", (e) => { todos = JSON.parse(e.data); renderNow(); renderBoard(); });
   es.addEventListener("audio", (e) => {
     const clip = JSON.parse(e.data);
+    if (playedClips.has(clip.url)) return; // dedupe — never double-play
+    playedClips.add(clip.url);
     drops.unshift(clip); drops = drops.slice(0, 25);
     renderRadio();
-    playDrop(clip); // interject over music — warden overrides
+    if (curMode === "music" && musicListening) {
+      // don't interrupt music; it lands in Radio history instead
+      setStatus("Warden dropped wisdom — find it in Radio.", "ok");
+      return;
+    }
+    playDrop(clip);
   });
 }
 

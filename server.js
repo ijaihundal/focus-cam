@@ -423,6 +423,36 @@ app.get("/api/drops", (req, res) => {
   res.json(meta.slice(0, 25).reverse());
 });
 
+// ---- Music-listening state (client tells backend to hold warden fire) ----
+const MUSIC_STATE = path.join(DATA_DIR, "music_state.json");
+app.post("/api/music-state", (req, res) => {
+  const listening = !!(req.body || {}).listening;
+  writeJson(MUSIC_STATE, { listening, at: Date.now() });
+  res.json({ ok: true });
+});
+app.get("/api/music-state", (req, res) => res.json(readJson(MUSIC_STATE, { listening: false, at: 0 })));
+
+// ---- Chores inbox (UI events the warden should acknowledge / act on) ----
+const CHORES = path.join(DATA_DIR, "chores.json");
+app.post("/api/chores", (req, res) => {
+  const b = req.body || {};
+  const log = readJson(CHORES, []);
+  log.push({ type: String(b.type || "").slice(0, 40), title: String(b.title || "").slice(0, 200), at: Date.now(), done: false });
+  while (log.length > 100) log.shift();
+  writeJson(CHORES, log);
+  res.json({ ok: true });
+});
+app.get("/api/chores", (req, res) => {
+  const log = readJson(CHORES, []);
+  res.json(log.filter((c) => !c.done));
+});
+app.post("/api/chores/ack", (req, res) => {
+  const log = readJson(CHORES, []);
+  for (const c of log) if (!c.done) c.done = true;
+  writeJson(CHORES, log);
+  res.json({ ok: true });
+});
+
 app.get("/api/audio/latest", (req, res) => {
   const files = fs.readdirSync(RADIO_DIR).sort();
   if (!files.length) return res.status(404).json({ ok: false, error: "No clips yet" });
