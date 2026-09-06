@@ -342,6 +342,7 @@ app.post("/api/audio", (req, res) => {
   const files = fs.readdirSync(RADIO_DIR).sort();
   while (files.length > 40) fs.unlinkSync(path.join(RADIO_DIR, files.shift()));
   const clip = { url: `/api/audio/${name}`, mime, task: String(b.task || "").slice(0, 200), message: String(b.message || "").slice(0, 600), at: Date.now() };
+  writeJson(path.join(DATA_DIR, "last_audio_meta.json"), clip);
   broadcast("audio", clip);
   res.json({ ok: true, clip });
 });

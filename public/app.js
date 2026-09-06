@@ -150,26 +150,41 @@ function connectSSE() {
 // ---- Warden radio: auto-play incoming voice clips ----
 let lastPlayedAt = 0;
 function playRadioClip(clip) {
-  const audio = new Audio(clip.url);
-  audio.play().catch(() => {
-    // Autoplay can be blocked until first user interaction; surface a tap-to-play chip.
-    setStatus("Warden has words — tap anywhere to hear.", "ok");
-    const unlock = () => { audio.play(); document.removeEventListener("click", unlock); document.removeEventListener("touchstart", unlock); };
-    document.addEventListener("click", unlock);
-    document.addEventListener("touchstart", unlock);
-  });
+  // Visible card with a real play button (iOS-safe): auto-play attempted, tap always available.
+  const box = $("radioBox") || (() => {
+    const b = document.createElement("div");
+    b.id = "radioBox";
+    b.className = "feed-card";
+    b.style.marginTop = "10px";
+    const feed = document.querySelector(".feed-card") || document.body;
+    feed.parentNode.insertBefore(b, feed);
+    return b;
+  })();
+  const time = new Date(clip.at || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  box.innerHTML = "";
+  const label = document.createElement("div");
+  label.className = "overline";
+  label.style.padding = "8px 10px 0";
+  label.textContent = `WARDEN RADIO · ${time}`;
+  const msg = document.createElement("div");
+  msg.style.cssText = "padding:2px 10px 8px;font-size:13px;opacity:.85";
+  msg.textContent = clip.message || clip.task || "";
+  const a = document.createElement("audio");
+  a.controls = true;
+  a.src = clip.url;
+  a.style.cssText = "width:100%;padding:0 10px 10px;display:block";
+  box.appendChild(label); box.appendChild(msg); box.appendChild(a);
+  a.play().catch(() => {}); // if blocked, the controls are right there — tap play
   lastPlayedAt = Date.now();
-  setStatus("Sam: " + (clip.task || "orientation"), "ok");
-  // also show as a verdict entry so it lands in the feed
-  prependVerdict({ verdict: "message", source: "agent", task: clip.task || "", note: "", message: "🔊 " + (clip.message || ""), at: clip.at || Date.now() });
 }
 
 async function loadInitialState() {
   try {
-    const [cfgRes, todosRes, verdictsRes] = await Promise.all([
+    const [cfgRes, todosRes, verdictsRes, audioRes] = await Promise.all([
       api("/api/config"),
       api("/api/todos"),
       api("/api/verdicts"),
+      fetch("/api/audio/latest").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     judgeConfig = await cfgRes.json();
     if (judgeConfig.judgeMode === "off") {
@@ -182,6 +197,8 @@ async function loadInitialState() {
     todos = await todosRes.json();
     renderTodos();
     for (const v of await verdictsRes.json()) prependVerdict(v);
+    // Seed the radio card with the latest clip so it's visible immediately on load
+    if (audioRes && audioRes.url) playRadioClip({ ...audioRes, at: audioRes.at || Date.now() });
   } catch (_) {}
 }
 
