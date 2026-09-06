@@ -395,7 +395,9 @@ function indexYouTube(id, link) {
   fetchOEmbed(link, (meta) => {
     if (meta) {
       done({ title: meta.title, artist: meta.artist, cover: meta.cover ? `/api/music/${id}/cover.jpg` : null });
-      if (meta.cover) exec(`curl -sL --max-time 30 "${meta.cover}" -o "${dir}/cover.jpg"`).on("close", () => broadcast("music", {}));
+      if (meta.cover) {
+        downloadFile(meta.cover, path.join(dir, "cover.jpg"), () => broadcast("music", {}));
+      }
     } else {
       done({ pending: false, error: "could not read link" });
       return;
@@ -411,6 +413,20 @@ function indexYouTube(id, link) {
         } catch { done({ pending: false, error: "parse failed" }); }
       });
   });
+}
+
+function downloadFile(url, dest, cb) {
+  const get = (u, redirects) => https.get(u, { timeout: 20000 }, (r) => {
+    if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location && redirects < 4) {
+      get(r.headers.location, redirects + 1); return;
+    }
+    if (r.statusCode !== 200) { cb(false); return; }
+    const ws = fs.createWriteStream(dest);
+    r.pipe(ws);
+    ws.on("finish", () => cb(true));
+    ws.on("error", () => cb(false));
+  }).on("error", () => cb(false));
+  get(url, 0);
 }
 
 function fetchOEmbed(link, cb) {
