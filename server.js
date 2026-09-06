@@ -363,7 +363,7 @@ const writeMusic = (lib) => writeJson(MUSIC_META, lib);
 app.get("/api/music", (req, res) => {
   const lib = readMusic().map((m) => ({
     id: m.id, title: m.title, artist: m.artist, cover: m.cover,
-    url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !m.file,
+    url: m.file ? `/api/music/${m.id}/audio.mp3` : null, pending: !!m.pending && !m.file,
     error: m.error || null, locked: !!m.locked,
   }));
   res.json(lib);
