@@ -482,7 +482,7 @@ app.post("/api/music/:id/sublimate", (req, res) => {
 
 app.get("/api/drops", (req, res) => {
   const meta = readJson(path.join(DATA_DIR, "drops.json"), []);
-  res.json(meta.slice(0, 25).reverse());
+  res.json(meta.slice(-25).reverse());
 });
 
 // ---- Music-listening state (client tells backend to hold warden fire) ----
