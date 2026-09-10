@@ -372,17 +372,36 @@ app.get("/api/music", (req, res) => {
 
 app.post("/api/music", async (req, res) => {
   const raw = String((req.body || {}).links || "");
-  const links = raw.split(/\s+/).filter((l) => /^https?:\/\//.test(l)).slice(0, 50);
+  const links = raw.split(/\s+/).filter((l) => /^https?:\/\/|list=/.test(l)).slice(0, 50);
   if (!links.length) return res.status(400).json({ ok: false, error: "No links found" });
+
+  // playlists: expand each into its video links first
+  const flat = [];
+  for (const link of links) {
+    if (/list=/.test(link) && !/watch\?v=.+&list=/.test(link)) {
+      // pure playlist URL (or playlist-first) → expand
+      const entries = await new Promise((resolve) => {
+        exec(`yt-dlp --flat-playlist --print "%(url)s" --cookies "${MUSIC_DIR}/cookies.txt" "${link}"`,
+          { timeout: 60 * 1000, maxBuffer: 20 * 1024 * 1024 }, (err, stdout) => {
+            if (err) return resolve([]);
+            resolve(String(stdout).split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\/(www\.)?(youtube\.com\/watch|youtu\.be\/)/.test(s)).slice(0, 100));
+          });
+      });
+      if (entries.length) { flat.push(...entries); continue; }
+    }
+    flat.push(link);
+  }
+  if (!flat.length) return res.status(400).json({ ok: false, error: "Could not read any link" });
+
   const lib = readMusic();
   const added = [];
-  for (const link of links) {
+  for (const link of flat) {
     if (lib.some((m) => m.link === link)) continue;
     const id = `yt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     lib.push({ id, link, title: link.slice(0, 80), artist: "YouTube", cover: null, file: null, pending: true });
     added.push(id);
-    // index async: metadata + cover + audio
-    indexYouTube(id, link);
+    // stagger indexing so 100 tracks don't stampede the CPU
+    setTimeout(() => indexYouTube(id, link), added.length * 4000);
   }
   writeMusic(lib);
   res.json({ ok: true, added: added.length });
@@ -487,6 +506,14 @@ app.get("/api/drops", (req, res) => {
 
 // ---- Music-listening state (client tells backend to hold warden fire) ----
 const MUSIC_STATE = path.join(DATA_DIR, "music_state.json");
+// manual warden on/off (user's explicit switch, persisted; default on)
+const WARDEN_ENABLED = path.join(DATA_DIR, "warden_enabled.json");
+app.get("/api/warden-enabled", (req, res) => res.json(readJson(WARDEN_ENABLED, { enabled: true })));
+app.post("/api/warden-enabled", (req, res) => {
+  const enabled = !!(req.body || {}).enabled;
+  writeJson(WARDEN_ENABLED, { enabled, at: Date.now() });
+  res.json({ ok: true, enabled });
+});
 app.post("/api/music-state", (req, res) => {
   const listening = !!(req.body || {}).listening;
   writeJson(MUSIC_STATE, { listening, at: Date.now() });

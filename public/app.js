@@ -165,11 +165,56 @@ setInterval(() => reportMusic(musicListening), 60000);
 let library = [];
 let searchQ = "";
 
+// ---- offline store (IndexedDB): songs saved INTO the browser ----
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open("focus-offline", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("songs", { keyPath: "key" });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbPut(song) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("songs", "readwrite");
+    tx.objectStore("songs").put({ ...song, key: `${song.id}:${song.ver}` });
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbAll() {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction("songs", "readonly");
+    const rq = tx.objectStore("songs").getAll();
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => rej(rq.error);
+  });
+}
+function blobUrl(buf) { return URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" })); }
+
+// player uses offline copy when it exists (offline-first playback)
+const _trackSrc = trackSrc;
+trackSrc = function (t) {
+  if (t && t._offline && t._offline[player.version === "sub" ? "sub" : "clean"]) {
+    return t._offline[player.version === "sub" ? "sub" : "clean"];
+  }
+  return _trackSrc(t);
+};
+
 async function loadMusic() {
   try {
     const r = await api("/api/music");
     library = await r.json();
     library.forEach((m) => { m.urlSub = m.hasSub ? `/api/music/${m.id}/audio_sub.mp3` : null; });
+    // attach offline copies (blob URLs) so playback works offline + show saved state
+    try {
+      const off = await idbAll();
+      library.forEach((m) => {
+        m._offline = {};
+        off.filter((o) => o.id === m.id).forEach((o) => { m._offline[o.ver] = blobUrl(o.buf); });
+        m.offlineClean = !!m._offline.clean; m.offlineSub = !!m._offline.sub;
+      });
+    } catch {}
     // reconcile current track's urlSub
     const t = cur();
     if (t) { const m = library.find((x) => x.id === t.id); if (m) t.urlSub = m.urlSub; }
@@ -284,6 +329,24 @@ function renderRadio() {
     : `<li class="row"><div class="body dim">History builds every 4 minutes.</div></li>`;
   document.querySelectorAll("[data-drop]").forEach((b) => b.addEventListener("click", () => playDropUrl(b.dataset.drop)));
 }
+// manual warden on/off
+async function syncWardenSwitch() {
+  try {
+    const j = await api("/api/warden-enabled").then((r) => r.json());
+    const on = j.enabled !== false;
+    const sw = $("wardenSwitch");
+    sw.classList.toggle("on", on);
+    sw.textContent = on ? "🎙 warden on" : "🎙 warden off";
+  } catch {}
+}
+$("wardenSwitch").addEventListener("click", async () => {
+  const sw = $("wardenSwitch");
+  const next = !sw.classList.contains("on");
+  sw.classList.toggle("on", next);
+  sw.textContent = next ? "🎙 warden on" : "🎙 warden off";
+  await api("/api/warden-enabled", { method: "POST", body: JSON.stringify({ enabled: next }) });
+  toast(next ? "Warden on — drops resume" : "Warden off — no more drops", "ok");
+});
 let dropAudio = null, dropPlayingUrl = null;
 function playDropUrl(url) {
   if (dropAudio) { dropAudio.pause(); }
@@ -324,6 +387,10 @@ function renderLibrary() {
       </div>
       <div class="card-title">${esc(m.title)}</div>
       <div class="card-sub">${isCur && player.playing ? `<span class="eq"><i></i><i></i><i></i></span> ` : ""}${esc(m.artist || "YouTube")}</div>
+      ${m.url ? `<div class="card-actions">
+        <button class="dl-btn${m.offlineClean ? " done" : ""}" data-dl="${m.id}" data-ver="clean" title="save to browser + device">${m.offlineClean ? "✓ offline" : "↓ clean"}</button>
+        <button class="dl-btn${m.hasSub ? "" : " na"}${m.offlineSub ? " done" : ""}" data-dl="${m.id}" data-ver="sub" ${m.hasSub ? "" : "disabled"} title="save affirmations version">${m.offlineSub ? "✓ offline" : "↓ sub"}</button>
+      </div>` : ""}
     </div>`;
   }).join("") + `</div>`;
   document.querySelectorAll("[data-play]").forEach((b) => b.addEventListener("click", (e) => {
@@ -340,6 +407,31 @@ function renderLibrary() {
     if (t && t.id === id) { openNP(); return; }
     const i = library.findIndex((x) => x.id === id);
     playTrack(i, library.map(toTrack));
+  }));
+  // download buttons → cache into IndexedDB (offline) + save a copy to device
+  document.querySelectorAll("[data-dl]").forEach((b) => b.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const id = b.dataset.dl, ver = b.dataset.ver;
+    const m = library.find((x) => x.id === id); if (!m || !m.url) return;
+    b.textContent = "…"; b.disabled = true;
+    try {
+      const url = ver === "sub" ? `/api/music/${id}/audio_sub.mp3` : m.url;
+      const buf = await fetch(url).then((r) => { if (!r.ok) throw new Error("fetch failed"); return r.arrayBuffer(); });
+      await idbPut({ id, ver, title: m.title, artist: m.artist, cover: m.cover, buf });
+      const blob = new Blob([buf], { type: "audio/mpeg" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(m.artist || "yt").replace(/[^\w\- ]/g, "")} - ${m.title.replace(/[^\w\- ]/g, "")}${ver === "sub" ? " (sub)" : ""}.mp3`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      b.textContent = "✓ saved"; b.classList.add("done");
+      loadMusic(); // refresh offline badges
+      toast(ver === "sub" ? "Affirmations version saved offline" : "Saved offline + downloaded", "ok");
+      renderLibrary();
+    } catch (err) {
+      b.textContent = ver === "sub" ? "↓ sub" : "↓ clean"; b.disabled = false;
+      toast("Download failed", "warn");
+    }
   }));
 }
 function toTrack(m) { return { id: m.id, title: m.title, artist: m.artist, cover: m.cover, url: m.url, urlSub: m.urlSub || (m.hasSub ? `/api/music/${m.id}/audio_sub.mp3` : null) }; }
@@ -468,7 +560,7 @@ function connectSSE() {
       loadMusic(),
     ]);
     todos = t; drops = d;
-    renderNow(); renderBoard(); renderRadio(); renderPlayer();
+    renderNow(); renderBoard(); renderRadio(); renderPlayer(); syncWardenSwitch();
     connectSSE();
   } catch {}
 })();

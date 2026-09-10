@@ -140,6 +140,15 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 .sub-chip{padding:8px 14px;border-radius:18px;background:var(--surface-high);font-weight:700;font-size:12px;color:var(--text-dim);transition:all .12s}
 .sub-chip.on{background:var(--accent);color:#0e0e0e}
 
+/* card download buttons */
+.card-actions{display:flex;gap:6px;margin-top:8px}
+.dl-btn{flex:1;padding:6px 0;border-radius:6px;background:var(--surface-high);color:var(--text-dim);font-size:10px;font-weight:700;transition:all .12s}
+.dl-btn:hover{color:var(--text);background:var(--surface-highest)}
+.dl-btn.done{background:var(--accent);color:#0e0e0e}
+.dl-btn.na{opacity:.35}
+.dl-btn:disabled{cursor:default}
+.off-badge{position:absolute;bottom:7px;left:7px;font-size:9px;font-weight:800;letter-spacing:.06em;background:rgba(0,0,0,.75);color:var(--accent);padding:3px 7px;border-radius:8px}
+
 /* ---------- toast ---------- */
 .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(var(--pbar-h) + var(--nav-h) + 24px);
   background:#2e2e2e;color:#fff;padding:10px 18px;border-radius:22px;font-size:13px;font-weight:600;z-index:90;
@@ -200,7 +209,8 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 </main>
 
 <main id="view-radio" hidden>
-  <div class="vhead"><h1>Warden Radio</h1><div class="sub">Sam speaks between your songs</div></div>
+  <div class="vhead" style="display:flex;align-items:center;justify-content:space-between"><div><h1>Warden Radio</h1><div class="sub">Sam speaks between your songs</div></div>
+    <button class="sub-chip on" id="wardenSwitch" title="warden on/off">🎙 warden on</button></div>
   <div class="nowdrop panel" id="latestDrop">Loading…</div>
   <div class="section"><span class="overline pad">History</span>
     <ul class="rows panel" id="dropList" style="margin:0 16px"></ul>
@@ -216,7 +226,7 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 <main id="view-music" hidden>
   <div class="vhead"><h1>Music</h1><div class="sub">Your library, plus whatever you paste</div></div>
   <div class="addbar"><input id="searchInput" placeholder="Search library…" autocomplete="off"></div>
-  <div class="addbar"><input id="linkInput" placeholder="Paste YouTube links, one per line" autocomplete="off"><button id="linkBtn">+</button></div>
+  <div class="addbar"><input id="linkInput" placeholder="YouTube links or playlists, one per line" autocomplete="off"><button id="linkBtn">+</button></div>
   <div class="mstatus" id="musicStatus"></div>
   <div id="musicGrid"></div>
 </main>
