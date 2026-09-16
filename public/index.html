@@ -169,6 +169,22 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 .focus-meta{margin-top:14px;font-size:12px;color:var(--text-dim);text-align:center;min-height:16px}
 .strict-row{margin-top:14px;font-size:12px;color:var(--text-dim);display:flex;gap:8px;align-items:center}
 .strict-row input{accent-color:var(--accent)}
+.focus-actions-bar{display:flex;gap:18px;margin-top:18px}
+.fab-mini{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--text-dim);font-size:10px;font-weight:600;transition:color .12s}
+.fab-mini:hover,.fab-mini.on{color:var(--text)}
+.fab-mini .fi{font-size:17px;line-height:1}
+/* immersive fullscreen timer (Focus To-Do hero pattern) */
+.immersive{position:fixed;inset:0;z-index:100;background:radial-gradient(ellipse at 50% 30%,#1c2331 0%,#0b0e14 70%),#0b0e14;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px}
+.imm-task{position:absolute;top:calc(24px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+  background:rgba(255,255,255,.06);padding:10px 22px;border-radius:24px;font-size:14px;font-weight:600;max-width:80vw;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.imm-ring{width:min(70vw,300px);aspect-ratio:1;border-radius:50%;border:2px solid rgba(255,255,255,.28);
+  display:flex;align-items:center;justify-content:center}
+.imm-digit{font-size:clamp(3rem,13vw,4.4rem);font-weight:200;color:rgba(255,255,255,.92);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.imm-start{padding:13px 30px;border-radius:26px;background:rgba(255,255,255,.92);color:#111;font-weight:700;font-size:14px}
+.imm-bar{position:absolute;bottom:calc(26px + env(safe-area-inset-bottom));display:flex;gap:26px}
+.imm-bar button{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,.1);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center}
 
 /* ---------- REPORT ---------- */
 .report-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 16px}
@@ -302,7 +318,21 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
       <button class="big-btn" id="focusGiveUp" hidden>Give up</button>
     </div>
     <div class="focus-meta" id="focusMeta"></div>
+    <div class="focus-actions-bar">
+      <button class="fab-mini" id="strictBtn" title="strict mode"><span class="fi">🔒</span><span class="fl">Strict</span></button>
+      <button class="fab-mini" id="fullscreenBtn" title="immersive fullscreen"><span class="fi">⛶</span><span class="fl">Fullscreen</span></button>
+      <button class="fab-mini" id="soundBtn" title="play focus music"><span class="fi">♫</span><span class="fl">Music</span></button>
+    </div>
     <label class="strict-row"><input type="checkbox" id="strictToggle"> strict — warden calls me back if I leave</label>
+  </div>
+  <div class="immersive" id="immersive" hidden>
+    <div class="imm-task" id="immTask">Reading</div>
+    <div class="imm-ring"><div class="imm-digit" id="immDisplay">25:00</div></div>
+    <button class="imm-start" id="immStart">▶ Start to Focus</button>
+    <div class="imm-bar">
+      <button id="immPause">⏸</button>
+      <button id="immExit">✕</button>
+    </div>
   </div>
 </main>
 

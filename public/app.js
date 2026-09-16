@@ -698,6 +698,31 @@ startFocus = function () { _startFocus(); keepAwake(true); };
 const _resetToFocus = resetToFocus;
 resetToFocus = function () { _resetToFocus(); keepAwake(false); };
 
+// immersive fullscreen mode (Focus To-Do hero pattern)
+function syncImmersive() {
+  const t = cur();
+  $("immTask").textContent = focus.taskTitle || t?.title || "Focus";
+  $("immDisplay").textContent = focus.running
+    ? fmtMs(focus.endsAt - Date.now())
+    : fmtMs(focus.durMin * 60000);
+  $("immStart").hidden = focus.running;
+  $("immPause").textContent = focus.paused ? "▶" : "⏸";
+}
+function openImmersive() { syncImmersive(); $("immersive").hidden = false; }
+function closeImmersive() { $("immersive").hidden = true; }
+$("fullscreenBtn").addEventListener("click", openImmersive);
+$("immExit").addEventListener("click", closeImmersive);
+$("immStart").addEventListener("click", () => {
+  if (!focus.running) startFocus();
+  syncImmersive();
+});
+$("immPause").addEventListener("click", () => { $("focusStart").click(); syncImmersive(); });
+setInterval(() => { if (!$("immersive").hidden) syncImmersive(); }, 500);
+$("soundBtn").addEventListener("click", () => { show("music"); toast("Pick a focus track — warden stays quiet while it plays", "ok"); });
+$("strictBtn").addEventListener("click", () => { $("strictToggle").click(); $("strictBtn").classList.toggle("on", $("strictToggle").checked); });
+// keep 4-bar Strict button in sync with checkbox state
+$("strictToggle").addEventListener("change", () => $("strictBtn").classList.toggle("on", $("strictToggle").checked));
+
 // offline persistence: resume interrupted session state
 setInterval(() => {
   if (focus.running && !focus.paused) localStorage.setItem("focus_live", JSON.stringify({ endsAt: focus.endsAt, onBreak: focus.onBreak, taskId: focus.taskId, taskTitle: focus.taskTitle, startedAt: focus.startedAt }));
