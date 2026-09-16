@@ -606,6 +606,21 @@ app.get("/api/state", (req, res) => {
 
 // ---- Focus sessions (pomodoro) + report + settings ----
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+// live focus state (client heartbeats while a session runs) + nudge tracking
+const FOCUS_LIVE = path.join(DATA_DIR, "focus_live.json");
+app.post("/api/focus/live", (req, res) => {
+  const b = req.body || {};
+  const state = {
+    running: !!b.running, onBreak: !!b.onBreak,
+    endsAt: Number(b.endsAt) || 0, startedAt: Number(b.startedAt) || 0,
+    taskId: String(b.taskId || "").slice(0, 40) || null,
+    taskTitle: String(b.taskTitle || "").slice(0, 200) || null,
+    at: Date.now(),
+  };
+  writeJson(FOCUS_LIVE, state);
+  res.json({ ok: true });
+});
+app.get("/api/focus/live", (req, res) => res.json(readJson(FOCUS_LIVE, { running: false })));
 const FOCUS_SETTINGS = path.join(DATA_DIR, "focus_settings.json");
 
 const DEFAULT_FOCUS_SETTINGS = {

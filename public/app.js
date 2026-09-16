@@ -723,10 +723,16 @@ $("strictBtn").addEventListener("click", () => { $("strictToggle").click(); $("s
 // keep 4-bar Strict button in sync with checkbox state
 $("strictToggle").addEventListener("change", () => $("strictBtn").classList.toggle("on", $("strictToggle").checked));
 
-// offline persistence: resume interrupted session state
+// offline persistence: resume interrupted session state + live heartbeat to server (for Telegram nudges)
 setInterval(() => {
-  if (focus.running && !focus.paused) localStorage.setItem("focus_live", JSON.stringify({ endsAt: focus.endsAt, onBreak: focus.onBreak, taskId: focus.taskId, taskTitle: focus.taskTitle, startedAt: focus.startedAt }));
-  else localStorage.removeItem("focus_live");
+  const payload = { running: focus.running && !focus.paused, onBreak: focus.onBreak, endsAt: focus.endsAt, startedAt: focus.startedAt, taskId: focus.taskId, taskTitle: focus.taskTitle };
+  if (focus.running && !focus.paused) {
+    localStorage.setItem("focus_live", JSON.stringify(payload));
+    fetch("/api/focus/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => {});
+  } else {
+    localStorage.removeItem("focus_live");
+    fetch("/api/focus/live", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, running: false }) }).catch(() => {});
+  }
 }, 2000);
 
 // ============================================================
