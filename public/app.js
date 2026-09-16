@@ -285,11 +285,11 @@ function renderBoard() {
     ? sorted.map((t) => {
         const dot = t.priority ? `<span class="prio-dot ${t.priority}"></span>` : "";
         const pomo = `<span class="est-pomos" title="estimated pomodoros">✦<input type="number" min="1" max="20" value="${t.est || 2}" data-est="${t.id}"></span>`;
-        const subs = (t.subs || []).length ? `<ul class="subs">${t.subs.map((s) => `
+        const subs = `<ul class="subs">${(t.subs || []).map((s) => `
           <li class="${s.done ? "done" : ""}" data-subrow="${t.id}:${s.id}">
             <span class="subcheck" data-subtoggle="${t.id}:${s.id}">${s.done ? "✓" : ""}</span>
             <span>${esc(s.title)}</span></li>`).join("")}
-          <li class="subadd"><input placeholder="add subtask…" data-subadd="${t.id}"></ul>` : "";
+          <li class="subadd"><input placeholder="add subtask…" data-subadd="${t.id}"></ul>`;
         return `<li class="row ${t.status === "active" ? "np" : ""}">
         ${dot}
         <div class="num">${t.status === "active" ? `<span class="eq"><i></i><i></i><i></i></span>` : t.status === "done" ? "✓" : sorted.indexOf(t) + 1}</div>
