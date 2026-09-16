@@ -290,7 +290,7 @@ function renderBoard() {
             <span class="subcheck" data-subtoggle="${t.id}:${s.id}">${s.done ? "✓" : ""}</span>
             <span>${esc(s.title)}</span></li>`).join("")}
           <li class="subadd"><input placeholder="add subtask…" data-subadd="${t.id}"></ul>`;
-        return `<li class="row ${t.status === "active" ? "np" : ""}">
+        return `<li class="row ${t.status === "active" ? "act" : ""}">
         ${dot}
         <div class="num">${t.status === "active" ? `<span class="eq"><i></i><i></i><i></i></span>` : t.status === "done" ? "✓" : sorted.indexOf(t) + 1}</div>
         <div class="body"><div class="title ${t.status === "done" ? "done" : ""}">${esc(t.title)}</div>
