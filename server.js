@@ -257,6 +257,14 @@ function sanitizeTodos(input) {
     title: String(t && t.title != null ? t.title : "").slice(0, 200),
     status: ["pending", "active", "done"].includes(t && t.status) ? t.status : "pending",
     note: String(t && t.note != null ? t.note : "").slice(0, 300),
+    est: t && t.est != null ? Math.max(1, Math.min(20, parseInt(t.est, 10) || 1)) : null,
+    priority: t && ["low", "med", "high"].includes(t.priority) ? t.priority : null,
+    subs: t && Array.isArray(t.subs) ? t.subs.slice(0, 20).map((s, j) => ({
+      id: String(s && s.id != null ? s.id : j),
+      title: String(s && s.title != null ? s.title : "").slice(0, 200),
+      done: !!(s && s.done),
+    })) : [],
+    due: t && t.due ? String(t.due).slice(0, 10) : null,
   }));
 }
 
@@ -593,6 +601,78 @@ app.get("/api/state", (req, res) => {
     judgeMode: JUDGE_MODE,
     judgeIntervalSec: JUDGE_INTERVAL_SEC,
     now: Date.now(),
+  });
+});
+
+// ---- Focus sessions (pomodoro) + report + settings ----
+const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const FOCUS_SETTINGS = path.join(DATA_DIR, "focus_settings.json");
+
+const DEFAULT_FOCUS_SETTINGS = {
+  focusMin: 25, shortBreakMin: 5, longBreakMin: 15, cyclesBeforeLong: 4,
+  continuous: false, strict: false,
+};
+app.get("/api/focus/settings", (req, res) => res.json({ ...DEFAULT_FOCUS_SETTINGS, ...readJson(FOCUS_SETTINGS, {}) }));
+app.post("/api/focus/settings", (req, res) => {
+  const b = req.body || {};
+  const cur = { ...DEFAULT_FOCUS_SETTINGS, ...readJson(FOCUS_SETTINGS, {}) };
+  for (const k of Object.keys(DEFAULT_FOCUS_SETTINGS)) {
+    if (k in b) cur[k] = typeof DEFAULT_FOCUS_SETTINGS[k] === "boolean" ? !!b[k] : Math.max(1, parseInt(b[k], 10) || DEFAULT_FOCUS_SETTINGS[k]);
+  }
+  writeJson(FOCUS_SETTINGS, cur);
+  broadcast("focus", { type: "settings" });
+  res.json({ ok: true, settings: cur });
+});
+
+app.get("/api/focus/sessions", (req, res) => res.json(readJson(SESSIONS_FILE, [])));
+app.post("/api/focus/sessions", (req, res) => {
+  const b = req.body || {};
+  const rec = {
+    id: `ses_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    taskId: String(b.taskId || "").slice(0, 40) || null,
+    started: Number(b.started) || Date.now(),
+    ended: Number(b.ended) || Date.now(),
+    minutes: Math.max(0, Math.min(180, Number(b.minutes) || 0)),
+    kind: b.kind === "break" ? "break" : "focus",
+    completed: !!b.completed,
+    abandoned: !!b.abandoned,
+    at: Date.now(),
+  };
+  const log = readJson(SESSIONS_FILE, []);
+  log.push(rec);
+  while (log.length > 5000) log.shift();
+  writeJson(SESSIONS_FILE, log);
+  broadcast("focus", { type: "session", session: rec });
+  res.json({ ok: true, session: rec });
+});
+
+app.get("/api/focus/report", (req, res) => {
+  const log = readJson(SESSIONS_FILE, []).filter((s) => s.kind === "focus");
+  const todos = readJson(TODOS_FILE, []);
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - i);
+    const next = new Date(d); next.setDate(d.getDate() + 1);
+    const inDay = log.filter((s) => s.started >= d.getTime() && s.started < next.getTime());
+    days.push({
+      date: d.toISOString().slice(0, 10),
+      minutes: inDay.reduce((a, s) => a + s.minutes, 0),
+      pomodoros: inDay.filter((s) => s.completed).length,
+    });
+  }
+  // per-task: estimated (todos.est) vs actual completed pomodoros (last 30 days)
+  const since = Date.now() - 30 * 864e5;
+  const byTask = {};
+  log.filter((s) => s.started >= since && s.taskId).forEach((s) => { byTask[s.taskId] = (byTask[s.taskId] || 0) + (s.completed ? 1 : 0); });
+  const perTask = todos.map((t) => ({ id: t.id, title: t.title, est: t.est || null, actual: byTask[t.id] || 0, status: t.status }));
+  // completion streak (days with >=1 completed pomodoro, counting back from today)
+  let streak = 0;
+  for (let i = days.length - 1; i >= 0; i--) { if (days[i].pomodoros > 0) streak++; else if (i !== days.length - 1) break; }
+  res.json({
+    days, perTask, streak,
+    totalMinutes: days.reduce((a, d) => a + d.minutes, 0),
+    totalPomodoros: days.reduce((a, d) => a + d.pomodoros, 0),
+    tasksCompleted: todos.filter((t) => t.status === "done").length,
   });
 });
 

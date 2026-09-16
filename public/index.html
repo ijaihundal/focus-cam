@@ -149,6 +149,52 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 .dl-btn:disabled{cursor:default}
 .off-badge{position:absolute;bottom:7px;left:7px;font-size:9px;font-weight:800;letter-spacing:.06em;background:rgba(0,0,0,.75);color:var(--accent);padding:3px 7px;border-radius:8px}
 
+/* ---------- FOCUS (pomodoro) ---------- */
+.focus-wrap{display:flex;flex-direction:column;align-items:center;padding:12px 16px 24px}
+.timer-ring{width:min(72vw,280px);aspect-ratio:1;border-radius:50%;border:3px solid var(--border);display:flex;align-items:center;justify-content:center;position:relative;transition:border-color .3s}
+.timer-ring.running{border-color:var(--accent)}
+.timer-ring.break{border-color:#3d7dd8}
+.timer-ring.abandoned{border-color:#8a3a3a}
+.timer-inner{text-align:center}
+.timer-digit{font-size:clamp(2.6rem,11vw,3.6rem);font-weight:900;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.timer-label{margin-top:4px;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)}
+.chips{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+.chip.dur{padding:8px 14px;border-radius:18px;font-weight:700;font-size:12px;background:var(--surface-high);color:var(--text-dim);transition:all .12s}
+.chip.dur.on{background:var(--accent);color:#0e0e0e}
+.focus-controls{display:flex;gap:10px;margin-top:20px}
+.big-btn{padding:12px 34px;border-radius:24px;font-weight:800;font-size:15px;background:var(--surface-high);transition:transform .12s}
+.big-btn:active{transform:scale(.97)}
+.big-btn.primary{background:var(--accent);color:#0e0e0e}
+.big-btn.warn{background:#8a3a3a;color:#fff}
+.focus-meta{margin-top:14px;font-size:12px;color:var(--text-dim);text-align:center;min-height:16px}
+.strict-row{margin-top:14px;font-size:12px;color:var(--text-dim);display:flex;gap:8px;align-items:center}
+.strict-row input{accent-color:var(--accent)}
+
+/* ---------- REPORT ---------- */
+.report-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 16px}
+.rcard{padding:14px}
+.rstat{font-size:1.6rem;font-weight:900;margin-top:6px}
+.rsub{font-size:12px;color:var(--text-dim);margin-top:2px}
+.barchart{display:flex;align-items:flex-end;gap:8px;height:120px}
+.barchart .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;height:100%;justify-content:flex-end}
+.barchart .bar i{display:block;width:100%;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px;transition:height .3s}
+.barchart .bar span{font-size:10px;color:var(--text-dim)}
+.barchart .bar b{font-size:10px;color:var(--text);font-weight:700}
+.est-num{font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums;flex-shrink:0}
+.est-num .good{color:var(--accent)}
+.est-num .bad{color:#f0a500}
+.prio-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.prio-dot.high{background:#e5484d}.prio-dot.med{background:#f0a500}.prio-dot.low{background:#3d7dd8}
+.subs{list-style:none;margin:6px 0 0 34px}
+.subs li{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;color:var(--text-dim)}
+.subs li.done{text-decoration:line-through}
+.subs .subcheck{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0}
+.subs li.done .subcheck{background:var(--accent);border-color:var(--accent);color:#0e0e0e}
+.subadd{display:flex;gap:6px;margin:6px 0 0 34px}
+.subadd input{flex:1;background:var(--surface-high);border:1px solid var(--border);border-radius:14px;padding:6px 12px;color:var(--text);font:inherit;font-size:12px;outline:none}
+.est-pomos{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-dim);flex-shrink:0}
+.est-pomos input{width:30px;background:var(--surface-high);border:1px solid var(--border);border-radius:6px;color:var(--text);font:inherit;font-size:12px;text-align:center;padding:3px 0}
+
 /* ---------- toast ---------- */
 .toast{position:fixed;left:50%;transform:translateX(-50%) translateY(20px);bottom:calc(var(--pbar-h) + var(--nav-h) + 24px);
   background:#2e2e2e;color:#fff;padding:10px 18px;border-radius:22px;font-size:13px;font-weight:600;z-index:90;
@@ -190,8 +236,10 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 <aside class="sidebar">
   <div class="logo">focus</div>
   <button data-v="now" class="active sb"><span class="ic">◉</span>Now</button>
+  <button data-v="focus" class="sb"><span class="ic">◐</span>Focus</button>
   <button data-v="radio" class="sb"><span class="ic">◍</span>Radio</button>
   <button data-v="board" class="sb"><span class="ic">☰</span>Board</button>
+  <button data-v="report" class="sb"><span class="ic">▤</span>Report</button>
   <button data-v="music" class="sb"><span class="ic">♫</span>Music</button>
 </aside>
 
@@ -231,6 +279,47 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
   <div id="musicGrid"></div>
 </main>
 </div>
+
+<!-- FOCUS (pomodoro) -->
+<main id="view-focus" hidden>
+  <div class="vhead"><h1>Focus</h1><div class="sub" id="focusTaskName">Pick what you're working on</div></div>
+  <div class="focus-wrap">
+    <div class="timer-ring" id="timerRing">
+      <div class="timer-inner">
+        <div class="timer-digit" id="timerDisplay">25:00</div>
+        <div class="timer-label" id="timerLabel">ready</div>
+      </div>
+    </div>
+    <div class="chips" id="durChips">
+      <button class="chip dur" data-min="10">10m</button>
+      <button class="chip dur" data-min="15">15m</button>
+      <button class="chip dur on" data-min="25">25m</button>
+      <button class="chip dur" data-min="45">45m</button>
+      <button class="chip dur" data-min="50">50m</button>
+    </div>
+    <div class="focus-controls">
+      <button class="big-btn primary" id="focusStart">Start</button>
+      <button class="big-btn" id="focusGiveUp" hidden>Give up</button>
+    </div>
+    <div class="focus-meta" id="focusMeta"></div>
+    <label class="strict-row"><input type="checkbox" id="strictToggle"> strict — warden calls me back if I leave</label>
+  </div>
+</main>
+
+<!-- REPORT -->
+<main id="view-report" hidden>
+  <div class="vhead"><h1>Report</h1><div class="sub" id="reportSub">Your focus, measured</div></div>
+  <div class="report-grid">
+    <div class="panel rcard"><div class="overline pad">This week</div><div class="rstat" id="repTotal">0 min</div><div class="rsub" id="repPomos">0 pomodoros</div></div>
+    <div class="panel rcard"><div class="overline pad">Streak</div><div class="rstat" id="repStreak">0 days</div><div class="rsub" id="repTasks">0 tasks done</div></div>
+  </div>
+  <div class="section"><span class="overline pad">Focus minutes · last 7 days</span>
+    <div class="panel" style="margin:0 16px;padding:14px"><div id="barChart" class="barchart"></div></div>
+  </div>
+  <div class="section"><span class="overline pad">Estimated vs actual · per task (30d)</span>
+    <ul class="rows panel" id="estList" style="margin:0 16px"></ul>
+  </div>
+</main>
 
 <!-- persistent player bar -->
 <div class="pbar" id="pbar" hidden>
@@ -274,8 +363,10 @@ button{background:none;border:none;color:inherit;font:inherit;cursor:pointer}
 
 <nav class="nav" id="nav">
   <button data-v="now" class="active"><span class="ic">◉</span>now</button>
+  <button data-v="focus"><span class="ic">◐</span>focus</button>
   <button data-v="radio"><span class="ic">◍</span>radio</button>
   <button data-v="board"><span class="ic">☰</span>board</button>
+  <button data-v="report"><span class="ic">▤</span>report</button>
   <button data-v="music"><span class="ic">♫</span>music</button>
 </nav>
 

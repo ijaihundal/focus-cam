@@ -282,17 +282,47 @@ function renderBoard() {
   const order = { active: 0, pending: 1, done: 2 };
   const sorted = [...todos].sort((a, b) => order[a.status] - order[b.status]);
   $("boardList").innerHTML = sorted.length
-    ? sorted.map((t) => `<li class="row ${t.status === "active" ? "np" : ""}">
+    ? sorted.map((t) => {
+        const dot = t.priority ? `<span class="prio-dot ${t.priority}"></span>` : "";
+        const pomo = `<span class="est-pomos" title="estimated pomodoros">✦<input type="number" min="1" max="20" value="${t.est || 2}" data-est="${t.id}"></span>`;
+        const subs = (t.subs || []).length ? `<ul class="subs">${t.subs.map((s) => `
+          <li class="${s.done ? "done" : ""}" data-subrow="${t.id}:${s.id}">
+            <span class="subcheck" data-subtoggle="${t.id}:${s.id}">${s.done ? "✓" : ""}</span>
+            <span>${esc(s.title)}</span></li>`).join("")}
+          <li class="subadd"><input placeholder="add subtask…" data-subadd="${t.id}"></ul>` : "";
+        return `<li class="row ${t.status === "active" ? "np" : ""}">
+        ${dot}
         <div class="num">${t.status === "active" ? `<span class="eq"><i></i><i></i><i></i></span>` : t.status === "done" ? "✓" : sorted.indexOf(t) + 1}</div>
         <div class="body"><div class="title ${t.status === "done" ? "done" : ""}">${esc(t.title)}</div>
-        <div class="sub">${t.status === "active" ? "all that matters now" : t.status === "done" ? "done" : "queued"}</div></div>
-        <button class="iconbtn" data-toggle="${t.id}">${t.status === "done" ? "↺" : t.status === "active" ? "■" : "▸"}</button></li>`).join("")
+        <div class="sub">${t.status === "active" ? "all that matters now" : t.status === "done" ? "done" : "queued"}</div>
+        ${subs}</div>
+        ${pomo}
+        <button class="iconbtn" data-toggle="${t.id}">${t.status === "done" ? "↺" : t.status === "active" ? "■" : "▸"}</button></li>`;
+      }).join("")
     : `<li class="row"><div class="body dim">Nothing here. Add the first thing above.</div></li>`;
   document.querySelectorAll("[data-toggle]").forEach((b) => b.addEventListener("click", () => {
     const id = b.dataset.toggle; const t = todos.find((x) => x.id === id); if (!t) return;
     if (t.status === "pending") setActive(id);
     else if (t.status === "active") completeTodo(id);
     else reopenTodo(id);
+  }));
+  document.querySelectorAll("[data-est]").forEach((inp) => inp.addEventListener("change", () => {
+    const t = todos.find((x) => x.id === inp.dataset.est); if (!t) return;
+    t.est = Math.max(1, Math.min(20, parseInt(inp.value, 10) || 2));
+    pushTodos();
+  }));
+  document.querySelectorAll("[data-subtoggle]").forEach((el) => el.addEventListener("click", () => {
+    const [tid, sid] = el.dataset.subtoggle.split(":");
+    const t = todos.find((x) => x.id === tid); if (!t || !t.subs) return;
+    const s = t.subs.find((x) => x.id === sid); if (!s) return;
+    s.done = !s.done; pushTodos();
+  }));
+  document.querySelectorAll("[data-subadd]").forEach((inp) => inp.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !inp.value.trim()) return;
+    const t = todos.find((x) => x.id === inp.dataset.subadd); if (!t) return;
+    if (!t.subs) t.subs = [];
+    t.subs.push({ id: String(Date.now()), title: inp.value.trim().slice(0, 200), done: false });
+    inp.value = ""; pushTodos();
   }));
 }
 async function pushTodos() { await api("/api/todos", { method: "PUT", body: JSON.stringify(todos) }); renderAllViews(); }
@@ -511,9 +541,199 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ============================================================
+// FOCUS (pomodoro engine) — sessions persist server-side
+// ============================================================
+const focus = {
+  durMin: parseInt(localStorage.getItem("focus_dur") || "25", 10),
+  running: false, paused: false, onBreak: false,
+  startedAt: 0, endsAt: 0, remainingMs: 0, taskId: null, taskTitle: null,
+  cycle: parseInt(localStorage.getItem("focus_cycle") || "0", 10),
+  settings: { focusMin: 25, shortBreakMin: 5, longBreakMin: 15, cyclesBeforeLong: 4, continuous: false, strict: false },
+  _tick: null, _leftOnBlur: null,
+};
+
+async function loadFocusSettings() {
+  try {
+    const j = await api("/api/focus/settings").then((r) => r.json());
+    focus.settings = j;
+    $("strictToggle").checked = !!j.strict;
+    if (!focus.running) { focus.durMin = j.focusMin; markDurChip(); renderFocusIdle(); }
+  } catch {}
+}
+
+function markDurChip() {
+  document.querySelectorAll(".chip.dur").forEach((c) => c.classList.toggle("on", +c.dataset.min === focus.durMin));
+}
+function renderFocusIdle() {
+  $("timerDisplay").textContent = `${String(focus.durMin).padStart(2, "0")}:00`;
+  $("timerLabel").textContent = "ready";
+  $("timerRing").className = "timer-ring";
+  $("focusStart").textContent = "Start";
+  $("focusStart").classList.add("primary");
+  $("focusGiveUp").hidden = true;
+  const active = todos.find((t) => t.status === "active");
+  focus.taskId = active ? active.id : null;
+  focus.taskTitle = active ? active.title : null;
+  $("focusTaskName").textContent = active ? active.title : "No active task — pick one on the board";
+  $("focusMeta").textContent = active && active.est ? `est ${active.est} pomodoros` : "";
+}
+function fmtMs(ms) { const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; }
+
+function renderFocusTick() {
+  const ms = focus.running ? focus.endsAt - Date.now() : focus.remainingMs;
+  $("timerDisplay").textContent = fmtMs(ms);
+  if (!focus.running) return;
+  $("timerLabel").textContent = focus.onBreak ? "break" : "focused";
+  $("timerRing").className = "timer-ring " + (focus.onBreak ? "break" : "running");
+  $("focusStart").textContent = focus.paused ? "Resume" : "Pause";
+  $("focusStart").classList.toggle("primary", focus.paused);
+  $("focusGiveUp").hidden = false;
+}
+
+async function logSession(minutes, completed, abandoned) {
+  try {
+    await api("/api/focus/sessions", { method: "POST", body: JSON.stringify({
+      taskId: focus.onBreak ? null : focus.taskId,
+      started: focus.startedAt, ended: Date.now(), minutes,
+      kind: focus.onBreak ? "break" : "focus", completed, abandoned,
+    })});
+  } catch {}
+}
+
+function focusComplete() {
+  const mins = Math.round(focus.durMin);
+  logSession(mins, true, false);
+  player.audio.pause(); // warden gate releases
+  focus.cycle = focus.onBreak ? focus.cycle : focus.cycle + 1;
+  localStorage.setItem("focus_cycle", String(focus.cycle));
+  if (!focus.onBreak) {
+    const longDue = focus.cycle % focus.settings.cyclesBeforeLong === 0;
+    startBreak(longDue);
+  } else {
+    if (focus.settings.continuous) { resetToFocus(); startFocus(); }
+    else resetToFocus();
+  }
+}
+
+function startBreak(long) {
+  focus.onBreak = true;
+  focus.durMin = long ? focus.settings.longBreakMin : focus.settings.shortBreakMin;
+  focus.startedAt = Date.now(); focus.endsAt = Date.now() + focus.durMin * 60000;
+  focus.running = true; focus.paused = false;
+  $("timerLabel").textContent = long ? "long break" : "break";
+  $("focusStart").textContent = "Pause";
+  tickLoop();
+}
+
+function resetToFocus() {
+  focus.onBreak = false; focus.running = false; focus.paused = false;
+  clearInterval(focus._tick);
+  focus.durMin = focus.settings.focusMin;
+  markDurChip(); renderFocusIdle();
+}
+
+function startFocus() {
+  if (focus.onBreak) { // resuming or starting a break period
+    focus.startedAt = Date.now(); focus.endsAt = Date.now() + focus.durMin * 60000;
+  } else {
+    focus.startedAt = Date.now(); focus.endsAt = Date.now() + focus.durMin * 60000;
+    const active = todos.find((t) => t.status === "active");
+    focus.taskId = active ? active.id : null; focus.taskTitle = active ? active.title : null;
+  }
+  focus.running = true; focus.paused = false;
+  renderFocusTick(); tickLoop();
+}
+
+function tickLoop() {
+  clearInterval(focus._tick);
+  focus._tick = setInterval(() => {
+    if (!focus.running || focus.paused) return;
+    const left = focus.endsAt - Date.now();
+    if (left <= 0) { clearInterval(focus._tick); focusComplete(); renderFocusIdle(); return; }
+    renderFocusTick();
+  }, 500);
+}
+
+$("focusStart").addEventListener("click", () => {
+  if (!focus.running) { startFocus(); }
+  else if (!focus.paused) { focus.paused = true; focus.remainingMs = focus.endsAt - Date.now(); $("focusStart").textContent = "Resume"; $("focusStart").classList.add("primary"); }
+  else { focus.paused = false; focus.endsAt = Date.now() + focus.remainingMs; focus.startedAt = Date.now() - (focus.durMin * 60000 - focus.remainingMs); $("focusStart").textContent = "Pause"; $("focusStart").classList.remove("primary"); tickLoop(); }
+});
+$("focusGiveUp").addEventListener("click", () => {
+  const done = Math.max(0, Math.round(((focus.running && !focus.paused ? focus.endsAt - Date.now() : focus.remainingMs)) / 60000 * 10) / 10);
+  const mins = Math.max(0, Math.round((focus.durMin - done) * 10) / 10);
+  logSession(mins, false, true);
+  resetToFocus();
+  toast("Logged honestly. That's the practice.", "warn");
+});
+document.querySelectorAll(".chip.dur").forEach((c) => c.addEventListener("click", () => {
+  if (focus.running) return;
+  focus.durMin = +c.dataset.min; localStorage.setItem("focus_dur", String(focus.durMin));
+  markDurChip(); renderFocusIdle();
+}));
+$("strictToggle").addEventListener("change", async (e) => {
+  await api("/api/focus/settings", { method: "POST", body: JSON.stringify({ strict: e.target.checked }) });
+  focus.settings.strict = e.target.checked;
+  toast(e.target.checked ? "Strict on — leave this screen and the warden speaks" : "Strict off", "ok");
+});
+// strict: leaving focus view mid-session w/ strict on → warden drop
+document.querySelectorAll("#nav button").forEach((b) => b.addEventListener("click", () => {
+  if (focus.settings.strict && focus.running && !focus.paused && !focus.onBreak && b.dataset.v !== "focus") {
+    fetch("/api/chores", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "strict_escape", title: "left a running focus session" }) }).catch(() => {});
+    toast("Strict: escape logged — warden knows", "warn");
+  }
+  if (b.dataset.v === "report") loadReport();
+}));
+// wake lock during focus
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && "wakeLock" in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request("screen");
+    if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+const _startFocus = startFocus;
+startFocus = function () { _startFocus(); keepAwake(true); };
+const _resetToFocus = resetToFocus;
+resetToFocus = function () { _resetToFocus(); keepAwake(false); };
+
+// offline persistence: resume interrupted session state
+setInterval(() => {
+  if (focus.running && !focus.paused) localStorage.setItem("focus_live", JSON.stringify({ endsAt: focus.endsAt, onBreak: focus.onBreak, taskId: focus.taskId, taskTitle: focus.taskTitle, startedAt: focus.startedAt }));
+  else localStorage.removeItem("focus_live");
+}, 2000);
+
+// ============================================================
+// REPORT view
+// ============================================================
+async function loadReport() {
+  try {
+    const r = await api("/api/focus/report").then((r) => r.json());
+    $("repTotal").textContent = `${Math.round(r.totalMinutes)} min`;
+    $("repPomos").textContent = `${r.totalPomodoros} pomodoros`;
+    $("repStreak").textContent = `${r.streak} day${r.streak === 1 ? "" : "s"}`;
+    $("repTasks").textContent = `${r.tasksCompleted} tasks done`;
+    const max = Math.max(60, ...r.days.map((d) => d.minutes));
+    $("barChart").innerHTML = r.days.map((d) => {
+      const h = Math.round((d.minutes / max) * 100);
+      return `<div class="bar" title="${d.date}: ${d.minutes} min"><b>${d.minutes || ""}</b><i style="height:${h}%"></i><span>${d.date.slice(8)}</span></div>`;
+    }).join("");
+    $("estList").innerHTML = r.perTask.length ? r.perTask.map((t) => {
+      const cmp = t.est == null ? "" : t.actual <= t.est
+        ? `<span class="good">${t.actual}/${t.est}</span>`
+        : `<span class="bad">${t.actual}/${t.est}</span>`;
+      return `<li class="row"><div class="body"><div class="title">${esc(t.title)}</div>
+        <div class="sub">${t.status}</div></div>
+        <div class="est-num">${cmp || `${t.actual} ✦`}</div></li>`;
+    }).join("") : `<li class="row"><div class="body dim">No tasks yet.</div></li>`;
+  } catch {}
+}
+
+// ============================================================
 // NAV
 // ============================================================
-const views = ["now", "radio", "board", "music"];
+const views = ["now", "focus", "radio", "board", "report", "music"];
 function show(v) {
   views.forEach((x) => { $("view-" + x).hidden = x !== v; });
   document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
@@ -560,7 +780,27 @@ function connectSSE() {
       loadMusic(),
     ]);
     todos = t; drops = d;
-    renderNow(); renderBoard(); renderRadio(); renderPlayer(); syncWardenSwitch();
+    renderNow(); renderBoard(); renderRadio(); renderPlayer(); syncWardenSwitch(); loadFocusSettings();
+    // resume a session that survived a reload/tab crash
+    try {
+      const live = JSON.parse(localStorage.getItem("focus_live") || "null");
+      if (live && live.endsAt > Date.now()) {
+        focus.onBreak = !!live.onBreak; focus.taskId = live.taskId; focus.taskTitle = live.taskTitle;
+        focus.startedAt = live.startedAt; focus.endsAt = live.endsAt; focus.running = true; focus.paused = false;
+        focus.durMin = Math.max(1, Math.round((live.endsAt - Date.now()) / 60000));
+        $("focusTaskName").textContent = live.taskTitle || "";
+        tickLoop(); renderFocusTick(); keepAwake(true);
+        toast("Session resumed from before the reload", "ok");
+      } else if (live && live.endsAt <= Date.now()) {
+        // completed while away — log it
+        localStorage.removeItem("focus_live");
+        api("/api/focus/sessions", { method: "POST", body: JSON.stringify({
+          taskId: live.onBreak ? null : live.taskId, started: live.startedAt, ended: live.endsAt,
+          minutes: Math.round((live.endsAt - live.startedAt) / 60000),
+          kind: live.onBreak ? "break" : "focus", completed: true, abandoned: false }) }).catch(() => {});
+        toast("Session completed while you were away — logged", "ok");
+      }
+    } catch {}
     connectSSE();
   } catch {}
 })();
